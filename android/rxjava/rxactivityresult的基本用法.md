@@ -4,21 +4,21 @@
 github地址：[https://github.com/VictorAlbertos/RxActivityResult](https://github.com/VictorAlbertos/RxActivityResult)  
 作者：VictorAlbertos
 ## 常规写法
-- MainResultActivity(Result的请求者) 
+- MainResultActivity(Result的请求者)
 - SecondResultActivity（Result的发送者）
 ```
 sequenceDiagram
 MainResultActivity->>SecondResultAcitivity: requestCode
 SecondResultAcitivity->>MainResultActivity: result
 ```  
- 
+
 **MainResultActivity**
 ```java
 public class MainResultActivity extends AppCompatActivity {
-    
+
     //我们需要自己写一个常量作为requestCode，在请求result时传递进去
     public static final int REQUEST_CODE_NORMAL = 100;
-    
+
     //我们省略其他无关紧要代码
     //打开新的界面，请求result
     public void startByNormal() {
@@ -26,7 +26,7 @@ public class MainResultActivity extends AppCompatActivity {
                         SecondResultActivity.class),
                 REQUEST_CODE_NORMAL);
     }
-    
+
     //获得Result数据并处理
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -55,9 +55,10 @@ public class SecondResultActivity extends AppCompatActivity {
 }
 ```
 
+
 ## ==RxActivityResult==
 - 添加依赖
-   1. 在Project级别的build.gradle中添加： 
+   1. 在Project级别的build.gradle中添加：
    ```
    allprojects {
     repositories {
@@ -84,7 +85,7 @@ public class MainResultActivity extends AppCompatActivity {
                 .map(result -> result.data())//对result的处理，转换为intent
                 .subscribe(intent -> showResultIntentData(intent));//处理数据结果
   }
-  
+
   //处理数据结果
   public void showResultIntentData(Intent data) {
       String content = data.getStringExtra("content");
@@ -138,6 +139,3 @@ public class Result<T> {
 ```
 ## 总结
 RxJava强大在于其操作符，如果我们能够合理利用操作符，我们的代码能够变得更加简洁。
-
-
-

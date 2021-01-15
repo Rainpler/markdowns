@@ -1,15 +1,31 @@
 # RxJava 应用与原理
->RxJava 在 GitHub 主页上的自我介绍是 "a library for composing asynchronous and event-based programs using observable sequences for the Java VM"（一个在 Java VM 上使用可观测的序列来组成异步的、基于事件的程序的库）。这就是 RxJava ，概括得非常精准。
+>ReactiveX是Reactive Extensions的缩写，一般简写为Rx。RxJava 在 GitHub 主页上的自我介绍是 "a library for composing asynchronous and event-based programs using observable sequences for the Java VM"（一个在 Java VM 上使用可观测的序列来组成异步的、基于事件的程序的库）。这就是 RxJava ，概括得非常精准。
 
 生活中的例子：
 
 起点（分发事件(PATH)：我饿了）----------下楼-------去餐厅--------点餐----------> 终点（吃饭 消费事件）
 
 程序中的例子：
-gg
+
 起点（分发事件：点击登录）----------登录API-------请求服务器--------获取响应码----------> 终点（更新UI登录成功 消费事件）
 
-我们想要吃饭，必须先点餐，想点餐，必须先去餐厅，只有前面的事情做完了，后面的事情才能做，那么这种就称为驱动式事件。RxJava 是响应式编程的一种解决方式。
+我们想要吃饭，必须先点餐，想点餐，必须先去餐厅，只有前面的事情做完了，后面的事情才能做，那么这种就称为驱动式事件。RxJava 是响应式编程的一种解决方式。按照传统的函数式编程方式，这些事件必须一步步地去调用，而RxJava最重要的一点就是利用了异步。
+
+ReactiveX是一个使用可观察数据流进行异步编程的编程接口，让开发者可以利用可观察序列和LINQ风格查询操作符来编写异步和基于事件的程序，ReactiveX结合了观察者模式、迭代器模式和函数式编程的精华。
+
+**使用观察者模式**
+
+- 创建：Rx可以方便的创建事件流和数据流
+- 组合：Rx使用查询式的操作符组合和变换数据流
+- 监听：Rx可以订阅任何可观察的数据流并执行操作
+
+**简化代码**
+
+- 函数式风格：对可观察数据流使用无副作用的输入输出函数，避免了程序里错综复杂的状态
+- 简化代码：Rx的操作符通通常可以将复杂的难题简化为很少的几行代码
+- 异步错误处理：传统的``try/catch``没办法处理异步计算，Rx提供了合适的错误处理机制
+- 轻松使用并发：Rx的``Observables``和``Schedulers``让开发者可以摆脱底层的线程同步和各种并发问题
+
 
 本文主要包括以下几个部分：
 1. RxJava 应用场景
@@ -19,7 +35,13 @@ gg
 
 ## RxJava 应用场景
 
+RxJava是基于观察者模式的异步编程，那么同样是异步，RxJava比 ``AsyncTask`` ，``Handler`` 等好在哪里呢？
 
+一个词：简洁。
+
+异步操作很关键的一点是程序的简洁性，因为在调度过程比较复杂的情况下，异步代码经常会既难写也难被读懂。 Android 创造的 ``AsyncTask`` 和``Handler`` ，其实都是为了让异步代码更加简洁。RxJava 的优势也是简洁，但它的简洁的与众不同之处在于，随着程序逻辑变得越来越复杂，它依然能够保持简洁。
+
+我们来看一个图片下载的例子，界面上有一个显示网络图片的``ImageView``，启动线程通过网络下载图片，最后切换到UI线程，将图片加载到``ImageView``。
 ```java
     //打印logcat日志的标签
     private static final String TAG = DownloadActivity.class.getSimpleName();
@@ -54,7 +76,20 @@ gg
         }).start();
     }
 
+    private final Handler handler = new Handler(new Handler.Callback() {
+
+       @Override
+       public boolean handleMessage(@NonNull Message msg) {
+           Bitmap bitmap = (Bitmap) msg.obj;
+           image.setImageBitmap(bitmap);
+
+           if (progressDialog != null) progressDialog.dismiss();
+           return false;
+       }
+   });
+
 ```
+而如果使用 RxJava ，实现方式是这样的：
 
 ```java
 public void rxJavaDownloadImageAction(View view) {
@@ -121,7 +156,7 @@ public void rxJavaDownloadImageAction(View view) {
 
     }
 ```
-得益于RxJava的链式编程，增加需求变得简洁明了，假如有一个需求需要将图片再加上水印、并添加日志记录，那么可以在链的后面再添加两个map操作方法
+虽然代码看起来变多了，但得益于RxJava从上至下的链式编程，代码没有任何的嵌套，变得简洁明了。假如再有一个需求需要将图片再加上水印、并添加日志记录，那么可以在链的后面再添加两个map操作方法。如果是传统函数式编程的话，面对当初写的那一堆缩进，理解代码也需要重新花一段时间吧。
 ```java
 ...
 // 图片上绘制文字 加水印
@@ -187,7 +222,7 @@ public final static <UD> ObservableTransformer<UD, UD> rxud() {
 ## RxJava配合Retrofit
 >Retrofit 是一个 RESTful 的 HTTP 网络请求框架的封装。网络请求的工作本质上是 OkHttp 完成，而 Retrofit 仅负责 网络请求接口的封装
 
-Retrofit 除了提供了传统的 Callback 形式的 API，还有 RxJava 版本的 Observable 形式 API。这里使用一个获取玩安卓Api来作为例子讲解
+Retrofit 除了提供了传统的 Callback 形式的 API，还有 RxJava 版本的 Observable 形式 API，可以二者结合让网络请求更加简洁。这里使用一个获取玩安卓Api来作为例子讲解。
 **WanAndroidApi**
 ```java
 public interface WanAndroidApi {
@@ -201,7 +236,7 @@ public interface WanAndroidApi {
     Observable<ProjectItem> getProjectItem(@Path("pageIndex") int pageIndex, @Query("cid") int cid);  // 异步线程 耗时操作
 }
 ```
-**Retrofit**
+**配置Retrofit**
 ```java
 public static String BASE_URL = "https://www.wanandroid.com/";
 
