@@ -336,7 +336,7 @@ static final class MapObserver<T, U> extends BasicFuseableObserver<T, U> {
   }
 }
 ```
-由前面的流程分析，会一直调用到``CreateEmitter.onNext()``，然后又会进一步对``MapObserver``进行拆包，进而走到它的``MapObserver.onNext()``方法中，先对Function 对象 ``mapper``进行合法性校验，然后调用``apply()``函数，这里的apply函数是抽象函数。具体实现在我们的链式调用中，最后得到返回值v，也就是经过变换后的对象，并调用``downstream.onNext(v)`` 向下游传递。``downsteam``则为被包裹住的``observer``对象。
+由前面的流程分析，会一直调用到``CreateEmitter.onNext()``，然后又会进一步对``M apObserver``进行拆包，进而走到它的``MapObserver.onNext()``方法中，先对Function 对象 ``mapper``进行合法性校验，然后调用``apply()``函数，这里的apply函数是抽象函数。具体实现在我们的链式调用中，最后得到返回值v，也就是经过变换后的对象，并调用``downstream.onNext(v)`` 向下游传递。``downsteam``则为被包裹住的``observer``对象。
 ```java
 new Function<Object, Boolean>() {
     @Override
