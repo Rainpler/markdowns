@@ -192,7 +192,7 @@ public final class ObservableCreate<T> extends Observable<T> {
 ``ObservableCreate``中创建了一个``source``成员变量，并在创建的时候直接将传入的自定义source赋值给它。
 ### subscribe订阅过程
 ```java
-observable.subscribe(new Observer(Object){
+observable.subscribe(new Observer(object){
   ......
 })
 ```
@@ -231,7 +231,7 @@ public final void subscribe(@NonNull Observer<? super T> observer) {
        }
    }
 ```
-首先``CreateEmitter``为我们传进来的自定义``observer``创建一个事件发射器，然后调用``observer.onSubscribe()``，这就是前文提到一调用``subscribe()``，``observer.onSubscribe()``就会调用的原因。
+首先``CreateEmitter``为我们传进来的自定义``observer``创建一个事件发射，并将它包裹起来，然后调用``observer.onSubscribe()``，这就是前文提到一调用``subscribe()``，``observer.onSubscribe()``就会调用的原因。
 
 接着调用``source.subcribe()``，把创建的事件发射器传进去。还记得source是什么吗，它就是我们一开始创建的自定义source，而该方法的抽象实现又回到了在我们代码最开始的地方。
 ```java
@@ -284,7 +284,7 @@ public final class ObservableMap<T, U> extends AbstractObservableWithUpstream<T,
     }
 }
 ```
-首先在构造函数中，将Function保存起来，由于``map()``之后，返回的依旧是``Observerable``对象，因此订阅的流程与之前是一样的，同样会走到``subscribeActual()``中，然后为``observer``包裹一层``MapObserver``。由于``map()``函数的参数是``ObserverableCreate``的对象，因此，包裹后的``observerable``会走到``subscribeActual()``中，后续的流程跟上面是一样的。
+首先在构造函数中，将Function保存起来，``map()``之后，返回的依旧是``Observerable``对象，并将``ObserverableCreate``对象保存为它的source，接下来会走到``ObservableMap.subscribeActual()``中，然后为``observer``对象`t`包裹一层``MapObserver``。这时候再调用``ObserverableCreate.subscribeActual()``,后续的订阅流程就跟之前一样了。
 
 在这里，我们重点分析``MapObserver``中的处理。
 ```java
@@ -311,13 +311,14 @@ static final class MapObserver<T, U> extends BasicFuseableObserver<T, U> {
 
       //mapper合法性校验
       try {
-         //应用function
+         //应用function转换
           v = Objects.requireNonNull(mapper.apply(t), "The mapper function returned a null value.");
       } catch (Throwable ex) {
           fail(ex);
           return;
       }
       //向下游传递
+      //实际为我们自定义的observer
       downstream.onNext(v);
 
       @Override
@@ -335,7 +336,7 @@ static final class MapObserver<T, U> extends BasicFuseableObserver<T, U> {
   }
 }
 ```
-由前面的流程分析，会一直调用到``CreateEmitter.onNext()``，然后又会进一步对``MapObserver``进行拆包，进而走到它的``onNext()``方法中，先对Function 对象 ``mapper``进行合法性校验，然后调用``apply()``函数，这里的apply函数是抽象函数。具体实现在我们的链式调用中，最后得到返回值v，也就是经过变换后的对象，并调用``downstream.onNext(v)`` 向下游传递。
+由前面的流程分析，会一直调用到``CreateEmitter.onNext()``，然后又会进一步对``MapObserver``进行拆包，进而走到它的``MapObserver.onNext()``方法中，先对Function 对象 ``mapper``进行合法性校验，然后调用``apply()``函数，这里的apply函数是抽象函数。具体实现在我们的链式调用中，最后得到返回值v，也就是经过变换后的对象，并调用``downstream.onNext(v)`` 向下游传递。``downsteam``则为被包裹住的``observer``对象。
 ```java
 new Function<Object, Boolean>() {
     @Override
@@ -344,4 +345,6 @@ new Function<Object, Boolean>() {
     }
 }
 ```
-为什么RxJava要这么写呢，从上文的分析中，我们可以看到在链式调用中，如果调用多次``map()``，相当于
+为什么RxJava要这么写呢，从上文的分析中，我们可以看到在链式调用中，如果调用多次``map()``，相当于为自定义observer封装了层层包裹，发布订阅的过程就相当于是封包->拆包的过程，代码逻辑清晰，避免了函数嵌套。这就是一种装饰模型，一开始我们创建了``ObserverableCreate``，然后为它穿上一件件``ObserverableMap``的外套，然后``subscribe``的过程就是脱外套的过程。
+## 总结
+本篇文章通过对RxJava中Observer、Observable、subscribe源码分析，比较了其与标准观察者设计模式的差别，更深的学习了RxJava的思想和原理。
