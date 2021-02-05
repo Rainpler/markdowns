@@ -175,7 +175,7 @@ public class GenericMethod<T> {
     }
 }
 ```
-定义泛型方法的时候，首先在public与返回值之间的<T>必不可少，这表明这是一个泛型方法，并且声明了一个泛型T，这个T可以出现在这个泛型方法的任意位置，泛型的数量也可以为任意多个。要注意的是，在这里泛型类的T与泛型方法的T不一定是同一种类型，因为泛型方法中的泛型是一种全新的类型。
+定义泛型方法的时候，首先在public与返回值之间的\<T\>必不可少，这表明这是一个泛型方法，并且声明了一个泛型T，这个T可以出现在这个泛型方法的任意位置，泛型的数量也可以为任意多个。要注意的是，在这里泛型类的T与泛型方法的T不一定是同一种类型，因为泛型方法中的泛型是一种全新的类型。
 ## 如何限定类型变量
 有时候，我们需要对类型变量加以约束，比如计算两个变量的最小，最大值。
 ```Java
@@ -279,7 +279,7 @@ public class Pair<T> {
         Pair<Fruit> fruit = new Pair<>();
         Pair<Apple> apple = new Pair<>();
         //1. Pair<Apple>apple2  = new Pair<Fruit>();  参数类型不匹配
-    }    
+    }
   }
 ```
 ``Pair``类为一个泛型类，分别定义泛型类型为``Apple``和``Fruit``的两个Pair对象，那么这两个对象之间具有继承关系吗？答案是没有任何关系，1. 处的代码编译器会报参数类型不匹配。但是泛型类可以继承或者扩展其他泛型类，比如最常用的``List``和``ArrayList``。
@@ -352,7 +352,7 @@ public static void main(String[] args){
 
        printSuper(fruitGenericType);
        printSuper(appleGenericType);
-//        printSuper(hongFuShiGenericType);  
+//        printSuper(hongFuShiGenericType);
 //        printSuper(orangeGenericType);
 
        //表示GenericType的类型参数的下界是Apple
