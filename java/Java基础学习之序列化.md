@@ -1,7 +1,7 @@
 ## 序列化
 >将数据结构或对象转换成二进制串的过程。
-#### 序列化方案
-##### Serializeble Java序列化方案
+### 序列化方案
+#### Serializeble Java序列化方案
 在Java中使用Serializeble有两种方法，一种是实现Serializeble接口，另一种是实现Externalizable接口，它继承自Java.io.Serializeble类。
 我们观察源码可以发现，Serializeble接口内部是没有实现的。
 ```java
@@ -252,6 +252,112 @@ Java 序列化过程仅在对象层级都是可序列化的类中继续， 即�
 
 调用`` writeObject() ``方法在 java 中触发序列化过程。关于 ``readObject() ``方法, 需要注意的一点很重要一点是, 它用于从持久性读取字节, 并从这些字节创建对象, 并返回一个对象, 该对象需要类型强制转换为正确的类型。
 
-##### Parcelable Android独有的序列化方案
-##### 广义的序列化方案
-#### 如何选择合适的序列化方案
+Java的序列化机制针对枚举类型是特殊处理的。简单来讲，在序列化枚举类型时，只会存储枚举类的引用和枚举常量的名称。随后的反序列化的过程中，这些信息被用来在运行时环境中查找存在的枚举类型对象。
+#### Parcelable Android独有的序列化方案
+Parcelable是Android为我们提供的序列化的接口，跟Serializeble相比，Parcelable相使用相对复杂一些，但效率相对Serializable也高很多。
+| Serializable               | Parcelable                       |
+| -------------------------- | -------------------------------- |
+| 通过IO对硬盘操作，速度较慢 | 直接在内存操作，效率高，性能好   |
+| 大小不受限制               | 一般不能超过1M，修改内核也只能4M |
+| 大量使用反射，产生内存碎片 |                                  |
+
+
+先来看Parcelable的定义:
+```java
+public interface Parcelable
+{
+    //内容描述接口，基本不用管
+    public int describeContents();
+    //写入接口函数，打包
+    public void writeToParcel(Parcel dest, int flags);
+    //读取接口，目的是要从Parcel中构造一个实现了Parcelable的类的实例处理。因为实现类在这里还是不可知的，所以需要用到模板的方式，继承类名通过模板参数传入
+
+    //为了能够实现模板参数的传入，这里定义Creator嵌入接口,内含两个接口函数分别返回单个和多个继承类实例
+    public interface Creator<T>
+    {
+           public T createFromParcel(Parcel source);
+           public T[] newArray(int size);
+    }
+}
+```
+我们需要实现Parcelable接口，并实现``describeContents()``和``writeToParcel(Parcel dest, int flags)``两个方法。``writeToParcel()``是读取接口，目的是要从Parcel中构造一个实现了Parcelable的类的实例处理。因为实现类在这里还是不可知的，所以需要用到模板的方式，继承类名通过模板参数传入。
+
+所以，实现Parcelable步骤如下
+
+1. implements Parcelable
+
+2. 重写writeToParcel方法，将你的对象序列化为一个Parcel对象，即：将类的数据写入外部提供的Parcel中，打包需要传递的数据到Parcel容器保存，以便从 Parcel容器获取数据
+
+3. 重写describeContents方法，内容接口描述，默认返回0就可以
+
+4. 实例化静态内部对象CREATOR实现接口Parcelable.Creator
+
+public static final Parcelable.Creator\<T> CREATOR
+注：其中public static final一个都不能少，内部对象CREATOR的名称也不能改变，必须全部大写。需重写本接口中的两个方法：createFromParcel(Parcel in) 实现从Parcel容器中读取传递数据值，封装成Parcelable对象返回逻辑层，newArray(int size) 创建一个类型为T，长度为size的数组，仅一句话即可（return new T[size]），供外部类反序列化本类数组使用。
+```java
+public class Course implements Parcelable {
+
+    private String name;
+    private float score;
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        dest.writeString(this.name);
+        dest.writeFloat(this.score);
+    }
+
+    protected Course(Parcel in) {
+        this.name = in.readString();
+        this.score = in.readFloat();
+    }
+
+    public static final Parcelable.Creator<Course> CREATOR = new Parcelable.Creator<Course>() {
+        @Override
+        public Course createFromParcel(Parcel source) {
+            return new Course(source);
+        }
+
+        @Override
+        public Course[] newArray(int size) {
+            return new Course[size];
+        }
+    };
+}
+
+```
+简而言之：通过writeToParcel将你的对象映射成Parcel对象，再通过createFromParcel将Parcel对象映射成你的对象。也可以将Parcel看成是一个流，通过writeToParcel把对象写到流里面，在通过createFromParcel从流里读取对象，只不过这个过程需要你来实现，因此写的顺序和读的顺序必须一致。
+
+
+### 面试相关
+1. 反序列化后的对象，需要调用构造函数重新构造吗
+
+答：不会, 因为是从二进制直接解析出来的. 适用的是 Object 进行接收再强转, 因此不是原来的那个对象
+
+2. 序列前的对象与序列化后的对象是什么关系？是("=="还是equal？是浅复制还是深复制？)
+
+答：是一个深拷贝, 前后对象的引用地址不同，但是有一个例外是枚举，枚举类在被序列化的时候，存储起来的对象是枚举的引用和名称，反序列化的时候，从运行环境中查找枚举对象。
+
+3. Android里面为什么要设计出Bundle而不是直接用Map结构
+
+答:bundle 内部适用的是 ArrayMap, ArrayMap 相比 Hashmap 的优点是, 扩容方便, 每次扩容是原容量的一半, 在［百量］ 级别, 通过二分法查找 key 和 value (ArrayMap 有两个数组, 一个存放 key 的 hashcode, 一个存放 key+value 的 Entry) 的效率要比 hashmap 快很多, 由于在内存中或者 Android 内部传输中一般数据量较小, 因此用 bundle 更为合适。
+
+4. SerialVersionID的作用是什么？
+
+答:用于数据的版本控制, 如果反序列化后发现 ID 不一样, 认为不是之前序列化的对象。
+
+5. Android 中 intent/bundle 的通信原理以及大小限制?
+
+答: Android 中的 bundle 实现了 parcelable 的序列化接口, 目的是为了在进程间进行通讯, 不同的进程共享一片固定大 小的内存, parcelable 利用 parcel 对象的 read/write 方法, 对需要传递的数据进行内存读写, 因此这一块共享内存不能 过大, 在利用 bundle 进行传输时, 会初始化一个 BINDER_VM_SIZE 的大小 = 1 * 1024 * 1024 - 4096 * 2, 即便通过 修改 Framework 的代码, bundle 内核的映射只有 4M, 最大只能扩展到 4M.
+
+6. 为何Intent不能直接在组件间传递对象而要通过序列化机制？
+
+答: 因为 Activity 启动过程是需要与 AMS 交互, AMS 与 UI 进程是不同一个的, 因此进程间需要交互数据, 就必须序列化。
+
+7. 序列化与持久化的关系和区别是什么？
+
+答: 序列化是为了进程间数据交互而设计的, 持久化是为了把数据存储下来而设计的。
