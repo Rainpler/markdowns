@@ -142,6 +142,10 @@ private void parseJson(Context context) throws Exception {
     - 对象嵌套
       - 建立内部类，该内部类对象的名字父对象的key ，类似对象数组
 
+依赖：
+```java
+implementation 'com.google.code.gson:gson:2.8.5'
+```
 
 Json例子：
 ```json
@@ -276,6 +280,125 @@ public static void main(String... args) throws Exception {
     Student student1 = gson.fromJson(new JsonReader(
         new InputStreamReader(new FileInputStream(file))),
         new TypeToken<Student>() {}.getType());
+    System.out.println(student1);
+}
+```
+##### Gson注解的使用
+**@SerializedName** 注解可以将属性重命名，可以将json中的属性名转为我们自己自定义的属性名。假如后台传过来的字段为：
+```json
+"Data": {
+		"1": 1000000001,
+		"2": 2800,
+		"3": "UPDATE",
+		"4": 201901021130222,
+	}
+```
+我们不可能创建这么一个Bean类去解析
+```java
+public class DataBean{
+  private int 1;
+  private int 2;
+  private String 3;
+  private long 4;
+}
+```
+那这一定是非法的。而``@SerializedName``为我们提供了一个解决方案。先来看它的定义：
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.FIELD, ElementType.METHOD})
+public @interface SerializedName {
+
+  /**
+   * @return the desired name of the field when it is serialized or deserialized
+   */
+  String value();
+  /**
+   * @return the alternative names of the field when it is deserialized
+   */
+  String[] alternate() default {};
+}
+```
+``@SerializedName``注解提供了两个属性，'value`可用于映射JSON中的属性，还有一个属性'alternate'：接收一个String数组。
+alternate数组中出现任意一个属性名都可以转换为自定义的属性，如果出现多个则以最后一个为准。所以，我们的Bean类可以这么定义。
+
+所以，可以使用注解 @SerializedName 方式来保证命名规范，同时又可以正常映射接口字段，如果接口字段和命名规则差别很大，使用@SerializedName 注解来解决还是有必要的。
+```java
+public class DataBean{
+  @SerializedName("1")
+  private int a;
+  @SerializedName("2")
+  private int b;
+  @SerializedName("3")
+  private String c;
+  @SerializedName("4")
+  private long d;
+}
+```
+
+**@Expose** 注解可用serialize指定某字段是否参与序列化，默认为true，用deserialize指定是否参与反序列化，默认为true。
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.FIELD)
+public @interface Expose {
+
+  public boolean serialize() default true;
+  public boolean deserialize() default true;
+}
+```
+Gson在做版本控制的时候为我们提供了``@Since``和``@Until``两个注解，当我们做版本升级的时候，添加或是删改了某些字段，可以做兼容处理。
+
+**@Since** 注解需传入一个double型变量n，表示当前版本≥n时，才会参与序列化/反序列化。
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.FIELD, ElementType.TYPE})
+public @interface Since {
+  double value();
+}
+```
+**@Until** 注解需传入一个double型变量n，表示当前版本≤n时，才会参与序列化/反序列化。
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.FIELD, ElementType.TYPE})
+public @interface Until {
+  double value();
+}
+```
+
+**@JsonAdapter**
+
+
+#### Jackson解析
+- 解析原理：基于事件驱动
+- 解析过程：
+  1. 类似 GSON，先创建1个对应于JSON数据的JavaBean类，再通过简单操作即可解析
+  2. 与 Gson解析不同的是：GSON可按需解析，即创建的JavaBean类不一定完全涵盖所要解析的JSON数据，按需创建属性；但Jackson解析对应的JavaBean必须把Json数据里面的所有key都有所对应，即必须把JSON内的数据所有解析出来，无法按需解析.
+
+
+
+依赖：
+```java
+implementation 'com.fasterxml.jackson.core:jackson-databind:2.9.8'
+implementation 'com.fasterxml.jackson.core:jackson-core:2.9.8'
+implementation 'com.fasterxml.jackson.core:jackson-annotations:2.9.8'
+```
+使用：
+```java
+public static void main(String... args) throws Exception {
+    Student student = new Student();
+    student.setName("杰克逊");
+    student.setSax("男");
+    student.setAge(28);
+    student.addCourse(new Course("英语", 78.3f));
+    student.addCourse(new Course("语文", 88.9f));
+    student.addCourse(new Course("数学", 48.2f));
+    
+    ObjectMapper objectMapper = new ObjectMapper();
+    //jackson序列化
+    File file = new File(CurPath + "/jacksontest.json");
+    FileOutputStream fileOutputStream = new FileOutputStream(file);
+    objectMapper.writeValue(fileOutputStream, student);
+    //反序列化
+    Student student1 = objectMapper.readValue(file, Student.class);
     System.out.println(student1);
 }
 ```
