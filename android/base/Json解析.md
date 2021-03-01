@@ -127,6 +127,41 @@ private void parseJson(Context context) throws Exception {
 }
 ```
 
+#### Jackson解析
+- 解析原理：基于事件驱动
+- 解析过程：
+  1. 类似 GSON，先创建1个对应于JSON数据的JavaBean类，再通过简单操作即可解析
+  2. 与 Gson解析不同的是：GSON可按需解析，即创建的JavaBean类不一定完全涵盖所要解析的JSON数据，按需创建属性；但Jackson解析对应的JavaBean必须把Json数据里面的所有key都有所对应，即必须把JSON内的数据所有解析出来，无法按需解析.
+
+
+
+依赖：
+```java
+implementation 'com.fasterxml.jackson.core:jackson-databind:2.9.8'
+implementation 'com.fasterxml.jackson.core:jackson-core:2.9.8'
+implementation 'com.fasterxml.jackson.core:jackson-annotations:2.9.8'
+```
+使用：
+```java
+public static void main(String... args) throws Exception {
+    Student student = new Student();
+    student.setName("杰克逊");
+    student.setSax("男");
+    student.setAge(28);
+    student.addCourse(new Course("英语", 78.3f));
+    student.addCourse(new Course("语文", 88.9f));
+    student.addCourse(new Course("数学", 48.2f));
+
+    ObjectMapper objectMapper = new ObjectMapper();
+    //jackson序列化
+    File file = new File(CurPath + "/jacksontest.json");
+    FileOutputStream fileOutputStream = new FileOutputStream(file);
+    objectMapper.writeValue(fileOutputStream, student);
+    //反序列化
+    Student student1 = objectMapper.readValue(file, Student.class);
+    System.out.println(student1);
+}
+```
 #### Gson解析字符串
 - 解析原理：基于事件驱动
 - 解析流程：根据所需取的数据 建立1个对应于JSON数据的JavaBean类，即可通过简单操作解析出
@@ -364,41 +399,100 @@ public @interface Until {
 }
 ```
 
-**@JsonAdapter**
+**@JsonAdapter** 平时我们去解析一个JSON的时候，一般都是通过反射去得到一个实体对象的，因此性能也较低。因此，我们可以通过JsonAdapter，去手动解析。
 
-
-#### Jackson解析
-- 解析原理：基于事件驱动
-- 解析过程：
-  1. 类似 GSON，先创建1个对应于JSON数据的JavaBean类，再通过简单操作即可解析
-  2. 与 Gson解析不同的是：GSON可按需解析，即创建的JavaBean类不一定完全涵盖所要解析的JSON数据，按需创建属性；但Jackson解析对应的JavaBean必须把Json数据里面的所有key都有所对应，即必须把JSON内的数据所有解析出来，无法按需解析.
-
-
-
-依赖：
+自定义adapter需要继承自``TypeAdapter``并实现Bean类的泛型。在``write()``方法中把Bean类转化成Json字符串，在``read()``方法中，解析Json字符串创建成Bean类。
 ```java
-implementation 'com.fasterxml.jackson.core:jackson-databind:2.9.8'
-implementation 'com.fasterxml.jackson.core:jackson-core:2.9.8'
-implementation 'com.fasterxml.jackson.core:jackson-annotations:2.9.8'
-```
-使用：
-```java
-public static void main(String... args) throws Exception {
-    Student student = new Student();
-    student.setName("杰克逊");
-    student.setSax("男");
-    student.setAge(28);
-    student.addCourse(new Course("英语", 78.3f));
-    student.addCourse(new Course("语文", 88.9f));
-    student.addCourse(new Course("数学", 48.2f));
-    
-    ObjectMapper objectMapper = new ObjectMapper();
-    //jackson序列化
-    File file = new File(CurPath + "/jacksontest.json");
-    FileOutputStream fileOutputStream = new FileOutputStream(file);
-    objectMapper.writeValue(fileOutputStream, student);
-    //反序列化
-    Student student1 = objectMapper.readValue(file, Student.class);
-    System.out.println(student1);
+class UserJsonAdapter extends TypeAdapter<User> {
+    @Override
+    public void write(JsonWriter out, User user) throws IOException {
+        out.beginObject();
+        out.name("name");
+        out.value(user.firstName + " " + user.lastName);
+        out.endObject();
+    }
+
+    @Override
+    public User read(JsonReader in) throws IOException {
+        in.beginObject();
+        in.nextName();
+        String[] nameParts = in.nextString().split(" ");
+        in.endObject();
+        return new User(nameParts[0], nameParts[1]);
+    }
 }
 ```
+我们来看这样一个串Json：
+```json
+{
+   "name": "java",
+   "authors": ""
+}
+```
+后台返回的Json中有可能有空的String，这时候客户端使用默认的Gson解析就可能会报错，如果后台能重新发版还好，如果不能的话，那么客户端是不是可以在后台传值有问题的情况下，也进行错误处理呢。利用``TypeAdapter``，我们可以在``write()``中进行非空判断。
+```java
+new TypeAdapter<Foo>() {
+
+        @Override
+        public void write(JsonWriter out, Foo value) throws IOException {
+            if (value == null) {//进行非空判断
+                out.nullValue();
+                return;
+            }
+        }
+
+        @Override
+        public Foo read(JsonReader in) throws IOException {
+            if (in.peek() == JsonToken.NULL) {//进行非空判断
+                in.nextNull();
+                return null;
+            }
+        }
+    }
+```
+或者使用自定义``JsonDeserializer``
+```java
+static class GsonError1Deserializer implements JsonDeserializer<GsonError> {
+
+        @Override
+        public GsonError deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) throws JsonParseException {
+            final JsonObject jsonObject = json.getAsJsonObject();
+
+            final JsonElement jsonTitle = jsonObject.get("name");
+            final String name = jsonTitle.getAsString();
+
+            JsonElement jsonAuthors = jsonObject.get("authors");
+
+            GsonError gsonError = new GsonError();
+
+            if (jsonAuthors.isJsonArray()) {//如果数组类型，此种情况是我们需要的
+                //关于context在文章最后有简单说明
+                GsonError.AuthorsBean[] authors = context.deserialize(jsonAuthors, GsonError.AuthorsBean[].class);
+                gsonError.setAuthors(Arrays.asList(authors));
+            } else {//此种情况为无效情况
+                gsonError.setAuthors(null);
+            }
+            gsonError.setName(name);
+            return gsonError;
+        }
+    }
+```
+##### Gson 原理
+>Gson在这个序列化和反序列化的过程中，充当的了一个解析器的角色。
+
+**JsonElement**
+该类是一个抽象类，代表着json串的某一个元素。这个元素可以是一个Json(JsonObject)、可以是一个数组(JsonArray)、可以是一个Java的基本类型(JsonPrimitive)、当然也可以为null(JsonNull);
+![](http://darryrzhong.xyz/2019/09/15/java%E7%B3%BB%E5%88%97%E4%B9%8Bjson%E8%A7%A3%E6%9E%90/1240-20200309133433270.png)
+JsonObject,JsonArray,JsonPrimitive,JsonNull都是JsonElement这个抽象类的子类。JsonElement提供了一系列的方法来判断当前的JsonElement。JsonObject对象可以看成 name/values的集合，而这些values就是一个个JsonElement。
+
+**适配器模式**
+当输入一个Json字符串的时候，首先通过``Type``判断是否是基本数据类型，如果是则创建对应的TypeAdapter读取json串并返回，如果不是，则创建ReflectTypeAdapter，然后遍历对象的属性。这就是Json解析的基本流程。像上面代码，我们O在Android中的应用O在Android中的应用O在Android中的应用也可以使用自定义TypeAdapter。
+
+**Gson的整体解析流程**
+![](http://darryrzhong.xyz/2019/09/15/java%E7%B3%BB%E5%88%97%E4%B9%8Bjson%E8%A7%A3%E6%9E%90/1240-20200309133444236.png)
+
+![](http://darryrzhong.xyz/2019/09/15/java%E7%B3%BB%E5%88%97%E4%B9%8Bjson%E8%A7%A3%E6%9E%90/1240-20200309133448072.png)
+
+**Gson的反射解析机制**
+
+![](http://darryrzhong.xyz/2019/09/15/java%E7%B3%BB%E5%88%97%E4%B9%8Bjson%E8%A7%A3%E6%9E%90/1240-20200309133452928.png)
