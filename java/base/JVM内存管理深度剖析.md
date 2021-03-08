@@ -112,9 +112,65 @@ Java堆的大小参数设置：
 - 如果使用了NIO,这块区域会被频繁使用，在java堆内可以用directByteBuffer对象直接引用并操作；
 - 这块内存不受java堆大小限制，但受本机总内存的限制，可以通过MaxDirectMemorySize来设置（默认与堆内存最大值一样），所以也会出现OOM异常；
 
-#### 从底层深入理解运行时数据区
-打开HSDB，监控JVM的运行情况。
+##### HSDB
+>HSDB是jdk为我们提供的一个可视化的可监控JVM运行情况的工具。可以方便我们从底层去理解JVM
+打开HSDB，监控JVM的运行情况。sa-jdi.jar在我们JDK的lib目录中
 ```c
 java -cp ./sa-jdi.jar sun.jvm.hotspot.HSDB
 ```
 jps 类似于Linux上的ps命令，可以显示操作系统中运行的Java进程
+
+#### 深入辨析堆和栈
+**功能**
+以栈帧的方式存储方法调用的过程，并存储方法调用过程中基本数据类型的变量（int、short、long、byte、float、double、boolean、char等）以及对象的引用变量，其内存分配在栈上，变量出了作用域就会自动释放；
+
+而堆内存用来存储Java中的对象。无论是成员变量，局部变量，还是类变量，它们指向的对象都存储在堆内存中；
+
+**线程独享还是共享**
+栈内存归属于单个线程，每个线程都会有一个栈内存，其存储的变量只能在其所属线程中可见，即栈内存可以理解成线程的私有内存。
+堆内存中的对象对所有线程可见。堆内存中的对象可以被所有线程访问。
+
+**空间大小**
+栈的内存要远远小于堆内存，栈的深度是有限制的，可能发生StackOverFlowError问题。
+
+#### 内存溢出
+- 栈溢出
+- 堆溢出
+- 方法区溢出
+- 本机直接内存溢出
+
+
+#### 虚拟机优化技术
+##### 编译优化技术
+方法内联：
+下面这个例子，main方法在调用max方法的时候，参数都已经确定了，其实就可以直接去判断a > b。
+```java
+public static void main(String[] args) {
+   max(1, 2);//调用max方法：  虚拟机栈 --入栈（max 栈帧）
+    // boolean i1 = 1>2;
+}
+
+public static boolean max(int a,int b){//方法的执行入栈帧。
+    return a > b;
+}
+```
+如果调用max方法的话，就会涉及到虚拟机栈中max方法栈帧的入栈和出栈。而方法内联就是在编译过程中将目标方法的方法体复制到调用方法中，带来性能的提升。
+
+
+##### 栈的优化技术
+**栈帧之间数据共享**
+下面这个例子，我们通过HSDB可以观察到，work()方法栈帧的局部变量表会跟main()方法栈帧的操作数栈会有一部分共享。
+```java
+public class JVMStack {
+
+    public int work(int x) throws Exception{
+        int z =(x+5)*10;//局部变量表有
+        Thread.sleep(Integer.MAX_VALUE);
+        return  z;
+    }
+    public static void main(String[] args)throws Exception {
+        JVMStack jvmStack = new JVMStack();
+        jvmStack.work(10);//10  放入main栈帧操作数栈
+    }
+}
+```
