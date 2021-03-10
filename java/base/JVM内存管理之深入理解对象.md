@@ -73,6 +73,97 @@ public class IsAlive {
 (3) 方法区中常量引用的对象；
 (4) 本地方法栈中JNI（即一般说的Native方法）引用的对象；
 
-## JVM垃圾回收
+但是如果有引用链，就一定不会被回收吗？还要看对象之间的引用关系。JVM里面有四种引用关系。
+- 强引用
+- 软引用 SoftReference
+- 弱引用 WeakReference
+- 虚引用 PhantomReference
+
+强引用通常就是用等号来引用，GC不会回收被强引用的对象。而软引用的话，当快要发生内存溢出的话，就会被GC回收。如果是弱引用的话，当发生GC的时候，就会被回收掉。虚引用被定义出来之后则随时都可能会被GC回收。
+
+**测试软引用**
+```java
+public static void main(String[] args) {
+
+		User u = new User(1,"King"); //new是强引用
+		SoftReference<User> userSoft = new SoftReference<User>(u);//软引用
+		u = null;//干掉强引用，确保这个实例只有userSoft的软引用
+		System.out.println(userSoft.get()); //看一下这个对象是否还在
+		System.gc();//进行一次GC垃圾回收  千万不要写在业务代码中。
+		System.out.println("After gc");
+		System.out.println(userSoft.get());
+		//往堆中填充数据，导致OOM
+		List<byte[]> list = new LinkedList<>();
+		try {
+			for(int i=0;i<100;i++) {
+				//System.out.println("*************"+userSoft.get());
+				list.add(new byte[1024*1024*1]); //1M的对象
+			}
+		} catch (Throwable e) {
+			//抛出了OOM异常时打印软引用对象
+			System.out.println("Exception*************"+userSoft.get());
+		}
+
+	}
+```
+**测试弱引用**
+```java
+public static void main(String[] args) {
+		User u = new User(1,"King");
+		WeakReference<User> userWeak = new WeakReference<User>(u);
+		u = null;//干掉强引用，确保这个实例只有userWeak的弱引用
+		System.out.println(userWeak.get());
+		System.gc();//进行一次GC垃圾回收,千万不要写在业务代码中。
+		System.out.println("After gc");
+		System.out.println(userWeak.get());
+	}
+```
+#### 对象的分配策略
+**对象的分配原则**
+JVM在创建对象的过程中，分配存储空间的时候通常需要遵循以下原则：
+- 对象优先在Eden中分配
+- 空间分配担保
+- 大对象直接进入老年代
+- 长期存活的对象进入老年代
+- 动态对象年龄判断
+
+**分配策略优化**
+同时，分配的时候也有如下的优化技术：
+- 栈中优化对象：逃逸分析
+- 堆中的优化技术：本地线程分配缓冲（TLAB）
+
+当JVM遇到一条new指令的时候，首先判断是否在栈上分配，这时候就会使用到逃逸分析技术。在JIT的过程中，如果发现一个对象在方法中被定义后，作用域仅仅限于方法内，那么就称为没有发生方法逃逸，这时候，对象的分配就可以在栈上分配，当方法体执行结束了，栈上的空间也就跟着释放了，这样就可以提高JVM的效率，减少了GC的次数。
+
+通过``-XX:±DoEscapeAnalysis`` ： 表示开启或关闭逃逸分析
+
+接下来，如果不满足逃逸分析，就判断是否在TLAB上分配，如果不满足，再进一步判断是否是大对象，如果不是的话，就会在Eden中分配。所以说，无论是TLAB，还是小对象，都满足对象优先在Eden上分配的原则。如果是大对象的话，则会在Tenured中分配。
+
 #### 垃圾回收算法
+
+Oracle公司曾经进行过概率统计，在新生代中约98%的对象会在创建出来之后的第一次GC就会被回收掉，所以并不需要按照1:1的比例来划分内存空间，而是将内存分为一块较大的Eden空间和两块较小的Survivor空间，每次使用Eden和其中一块Survivor。
+
+我们知道Eden上只存放新生对象，而堆上又频繁着在发生GC回收，如果某个对象在GC中没有被回收掉，那个在对象的对象头的年龄上就会+1，然后从Eden移动到Survivor中。当再次发生回收时，将Survivor中还存活着的对象一次性的复制到另外一块Survivor，最后清理刚才用过的Survivor空间。HotSpot虚拟机默认Eden和Survivor的大小比例是8:1，也就是每次新生代中可用内存为整个新生代容量的90%（80%+10%），只有10%的内存会被“浪费”。这种发生在新生代上的GC回收算法被称为复制回收算法。
+
+| Eden | From | To  | Tenured |
+| ---- | ---- | --- | ------- |
+| 8  | 1  | 1  | 20     |
+
+而在对象头上，64位的JVM中age的比特位是只有4位的，因此能记录的最大年龄也就是1111（15次）。达到这个次数之后，对象就会进入老年代。
+
+当然，98%的对象可回收只是一般场景下的数据，我们没有办法保证每次回收都只有不多于10%的对象存活，当Survivor空间不够用时，需要依赖其他内存（这里指老年代）进行分配担保（Handle Promotion）。
+
+空间分配担保，这是在老年代中的垃圾回收算法。正常的流程来讲，对象的跨代移动都是从Eden到From到To，直到GC年龄达到阈值后才会进入Tenured。
+
+在发生Minor GC之前，虚拟机会检查老年代最大可用的连续空间是否大于新生代所有对象的总空间，
+
+- 如果大于，则此次Minor GC是安全的
+- 如果小于，则虚拟机会查看HandlePromotionFailure设置值是否允许担保失败。
+如果HandlePromotionFailure=true，那么会继续检查老年代最大可用连续空间是否大于历次晋升到老年代的对象的平均大小，如果大于，则尝试进行一次Minor GC，但这次Minor GC依然是有风险的；如果小于或者HandlePromotionFailure=false，则改为进行一次Full GC。
+
+上面提到了Minor GC依然会有风险，是因为新生代采用复制收集算法，假如大量对象在Minor GC后仍然存活（最极端情况为内存回收后新生代中所有对象均存活），而Survivor空间是比较小的，这时就需要老年代进行分配担保，把Survivor无法容纳的对象放到老年代。老年代要进行空间分配担保，前提是老年代得有足够空间来容纳这些对象，但一共有多少对象在内存回收后存活下来是不可预知的，因此只好取之前每次垃圾回收后晋升到老年代的对象大小的平均值作为参考。使用这个平均值与老年代剩余空间进行比较，来决定是否进行Full GC来让老年代腾出更多空间。
+
+取平均值仍然是一种概率性的事件，如果某次Minor GC后存活对象陡增，远高于平均值的话，必然导致担保失败，如果出现了分配担保失败，就只能在失败后重新发起一次Full GC。虽然存在发生这种情况的概率，但大部分时候都是能够成功分配担保的，这样就避免了过于频繁执行Full GC。
+
+
+
 #### 垃圾收集器
