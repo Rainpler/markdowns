@@ -302,4 +302,3 @@ System.out.println(s4 == s5);  // false
 //因为常量池中已经有了Hello字符串，所以intern方法直接返回地址
 System.out.println(s1 == s6);  // true
 ```
-#### 面试常见问题分析
