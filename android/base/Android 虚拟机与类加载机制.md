@@ -96,14 +96,129 @@ ART 使用预先 (AOT) 编译，并且从 Android N混合使用AOT编译，解�
 
 2、当设备闲置和充电时，编译守护进程会运行，根据Profile文件对常用代码进行 AOT 编译。待下次运行时直接使用。
 
-## ClassLoader
+## Android类加载
+#### 类加载机制
 我们都知道编写的类是通过ClassLoader加载的，那么在Andoird中，Class类加载机制是怎样的呢。在java.lava包中，有一个ClassLoader的抽象类，这是所有类加载器的基类。
 
-ClassLoader主要有两个子类，其中BootClassLoader用于加载Android Framework层class文件。而BaseDexClassLoader中又有DexPathList、PathClassLoader和DexClassLoader等三个主要的子类。
+ClassLoader主要有两个子类，其中BootstrapClassLoader用于加载Android Framework层class文件。而BaseDexClassLoader中又有DexPathList、PathClassLoader和DexClassLoader等三个主要的子类。
 - DexPathList
 - PathClassLoader  　 Android应用程序类加载器
 - DexClassLoader  　  额外提供的动态类加载器
 
 ![](https://ae01.alicdn.com/kf/Ufac4f359564c4570a80af97966227514m.jpg)
+对于PathClassLoader来说，我们来学习它的类加载过程，在它的顶级父类ClassLoader中，有一个``loadClass()``方法来加载class，我们来看它的源码：
+```java
+protected Class<?> loadClass(String name, boolean resolve)
+        throws ClassNotFoundException
+    {
+            // First, check if the class has already been loaded
+            Class<?> c = findLoadedClass(name);
+            if (c == null) {
+                try {
+                    if (parent != null) {
+                        c = parent.loadClass(name, false);
+                    } else {
+                        c = findBootstrapClassOrNull(name);
+                    }
+                }  catch (ClassNotFoundException e) {
+                    // ClassNotFoundException thrown if class not found
+                    // from the non-null parent class loader
+                }
 
-## 热修复
+                if (c == null) {
+                    // If still not found, then invoke findClass in order
+                    // to find the class.
+                    c = findClass(name);
+                }
+            }
+            return c;
+    }
+```
+该方法需要传入两个参数，一个是class的全类名，第二个是。方法首先通过``findLoadedClass()``寻找类加载的缓存，如果没有则进入if。这里有一个parent对象，这个对象是父类加载器对象，然后就会调用父类加载器的``loadClass()``方法。如果父类加载器还有父类加载器的话，又会再调用父类加载器的父类加载器的``loadClass()``方法。只有父类加载器无法完成此加载任务或者没有父类加载器时，``才自己去findClass()``加载。这就是双亲分托机制。它有以下两个优点：
+
+1. 避免重复加载，当父加载器已经加载了该类的时候，就没有必要子ClassLoader再加载一次。
+
+2. 安全性考虑，防止核心API库被随意篡改。
+
+对于PathClassLoader我们可以使用new PathClassLoader(ClassLoader parent)方法创建出来，可知需要传入ClassLoader对象，而在Android中，系统为PathClassLoader传入的是BootstrapClassLoader类加载器。
+
+``findClass()``是在BaseDexClassLoader中，我们再看它的代码：
+```java
+public class BaseDexClassLoader extends ClassLoader {
+
+    private final DexPathList pathList;
+
+    public BaseDexClassLoader(String dexPath, File optimizedDirectory,
+            String librarySearchPath, ClassLoader parent, boolean isTrusted) {
+        super(parent);
+        this.pathList = new DexPathList(this, dexPath, librarySearchPath, null, isTrusted);
+
+        if (reporter != null) {
+            reportClassLoaderChain();
+        }
+    }
+
+  @Override
+  protected Class<?> findClass(String name) throws ClassNotFoundException {
+      List<Throwable> suppressedExceptions = new ArrayList<Throwable>();
+      Class c = pathList.findClass(name, suppressedExceptions);
+      if (c == null) {
+          ClassNotFoundException cnfe = new ClassNotFoundException(
+                  "Didn't find class \"" + name + "\" on path: " + pathList);
+          for (Throwable t : suppressedExceptions) {
+              cnfe.addSuppressed(t);
+          }
+          throw cnfe;
+      }
+      return c;
+  }
+
+}
+```
+在BaseDexClassLoader的构造方法中，传入了dex文件的路径，并初始化pathList对象。
+```java
+DexPathList(ClassLoader definingContext, String dexPath,
+            String librarySearchPath, File optimizedDirectory, boolean isTrusted) {
+
+        ...
+
+        ArrayList<IOException> suppressedExceptions = new ArrayList<IOException>();
+        // save dexPath for BaseDexClassLoader
+        this.dexElements = makeDexElements(splitDexPath(dexPath), optimizedDirectory,
+                                           suppressedExceptions, definingContext, isTrusted);
+
+        ...
+    }
+```
+在``DexPathList()``方法中，因为一个dexPath下可能会有多个dex文件，首先通过``splitDexPath()``方法进行拆分，然后通过``makeDexElements()``生成Element数组，每一个dex就对应一个Element对象。
+```java
+public Class findClass(String name, List<Throwable> suppressed) {
+        for (Element element : dexElements) {
+            DexFile dex = element.dexFile;
+
+            if (dex != null) {
+                Class clazz = dex.loadClassBinaryName(name, definingContext, suppressed);
+                if (clazz != null) {
+                    return clazz;
+                }
+            }
+        }
+        if (dexElementsSuppressedExceptions != null) {
+            suppressed.addAll(Arrays.asList(dexElementsSuppressedExceptions));
+        }
+        return null;
+    }
+```
+然后在DexPathList的``findClass()``方法中，遍历刚才得到的Element数组，通过Element对象拿到对应的dexFile，然后使用``loadClassBinaryName()``寻找对应的Class对象。所以完整的类加载流程如下所示：
+
+![](https://ae01.alicdn.com/kf/Ud01570cf1fed4ae89d95848497def8d8V.jpg)
+#### 热修复
+从前面的类加载机制我们知道，在DexPathList中会去遍历dexElements数组并寻找对应的Class，而热修复就是基于此。我们可以将我们的修复工程打包成.dex补丁包，然后插入到dexElements的前面去。
+
+这样一来，当类加载器加载类的时候，就会先去加载我们补丁中的dex文件，并缓存Class。那么，我们要怎么去插入我们的.dex呢，无非就是反射机制嘛，基本流程如下。
+- 获取到当前应用的PathClassLoader
+- 反射获取到DexPathList属性对象pathList
+- 反射修改pathList的dexElements
+  1. 把补丁包patch.dex转化为Element[] （patch）
+  2. 获得pathList的dexElements属性 （old）
+  3. patch+old合并，并反射赋值给pathList的dexElements
