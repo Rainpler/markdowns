@@ -222,3 +222,8 @@ public Class findClass(String name, List<Throwable> suppressed) {
   1. 把补丁包patch.dex转化为Element[] （patch）
   2. 获得pathList的dexElements属性 （old）
   3. patch+old合并，并反射赋值给pathList的dexElements
+
+利用sdk提供的dex.bat工具，可以将class/jar文件打包成dex文件
+```
+dx --dex --output=output.dex  input.jar
+```
