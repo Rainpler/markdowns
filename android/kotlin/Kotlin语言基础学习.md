@@ -562,3 +562,48 @@ class NetManager2 {
 
 }
 ```
+## Kotlin与Java互相调用
+#### Java调用Kotlin方法
+假如我们有那么一个Kotlin类，因为允许函数写在方法外，所以这里写了两个``show()``方法。
+```kotlin
+class Utils {
+
+    fun show(info: String) {
+        println(info)
+    }
+
+}
+// MyUtils.kt 写了一个show      MyUtilsKt
+fun show(info: String) {
+    println(info)
+}
+```
+在Java中调用的时候，如果调用类的成员方法，则跟Java中使用一致，如果调用类外方法的话，则使用``classRt.xxx()``的形式，系统会生成一个UtilsKt的类。
+```java
+public static void main(String[] args) {
+
+        UtilsKt.show("Derry1");
+
+        new Utils().show("new Derry2");
+    }
+```
+#### Kotlin调用Java方法
+假如我们的Java类如下，提供了一个in的静态变量和一个``getString()``方法
+```java
+public class Test {
+
+    public static String in = "INNNNNN";
+
+    public String getString() {
+        return null;
+    }
+}
+```
+在Kotlin中，因为in是区间关键字所以引用的时候需要加上引号，而调用Java方法则会有"!"提醒，因此我们在使用的时候则最好通过局部变量引用，并使用"?"确保NULL检查机制安全。
+```kotlin
+fun main(){
+   println(Test.`in`)
+   var str: String  = Test().string
+    println(str.length)
+}
+```
