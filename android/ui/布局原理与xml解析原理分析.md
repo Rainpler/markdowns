@@ -78,16 +78,11 @@ mLayoutInflater.inflate(layoutResID, mContentParent)
 ```
 将资源文件加载到mContentParent中，我们来关注这个inflate方法，inflate方法会一层层调用，最后调用到
 ```java
-inflate(XmlPullParser parser, @Nullable ViewGroup root, boolean attachToRoot)
+inflate(XmlPullParser parser, @Nullable ViewGroup root, boolean attachToRoot){
+  ...
+}
 ```
-在这里会涉及到一个attachToRoot的参数。如果该参数是false的话，就会在xml文件中获取到布局属性，如果传入为true的话，就需要在代码中手动去设置布局的属性。
-```java
-if (!attachToRoot) {
-      // Set the layout params for temp if we are not
-      // attaching. (If we are, we use addView, below)
-      temp.setLayoutParams(params);
-  }
-```
+
 我们来看``final View temp = createViewFromTag(root, name, inflaterContext, attrs)``创建view的过程。
 
 在初始化的时候，如果factory不为空，则view的创建会被拦截，调用factory.onCreateView()方法。否则view的创建会走下面代码段：
@@ -143,6 +138,64 @@ public interface Factory2 extends Factory {
 ```
 两者都是要onCreateView函数，而Factory2比Factory多了一个父亲的参数。阅读到这里我们可以发现，如果我们要干预view的创建过程，一个是重写LayoutInflater方法，另一个可以实现自己的工厂类，拦截view的创建。
 
+回到inflate()方法，在这里会涉及到一个attachToRoot的参数。如果该参数是false的话，就会在xml文件中获取到布局属性，如果传入为true的话，就需要在代码中手动去设置布局的属性。
+```java
+params = root.generateLayoutParams(attrs);
+
+if (!attachToRoot) {
+      // Set the layout params for temp if we are not
+      // attaching. (If we are, we use addView, below)
+      temp.setLayoutParams(params);
+  }
+```
+继续往下看，看到``rInflateChildren(parser, temp, attrs, true)``，然后继续调用rInflate()函数。它会循环递归创建子布局，直到递归到达最深或者xml标签到END_TAG。
+```java
+ void rInflate(XmlPullParser parser, View parent, Context context,
+            AttributeSet attrs, boolean finishInflate) throws XmlPullParserException, IOException {
+
+        final int depth = parser.getDepth();
+        int type;
+        boolean pendingRequestFocus = false;
+
+        while (((type = parser.next()) != XmlPullParser.END_TAG ||
+                parser.getDepth() > depth) && type != XmlPullParser.END_DOCUMENT) {
+
+            if (type != XmlPullParser.START_TAG) {
+                continue;
+            }
+
+            final String name = parser.getName();
+
+            if (TAG_REQUEST_FOCUS.equals(name)) {
+                pendingRequestFocus = true;
+                consumeChildElements(parser);
+            } else if (TAG_TAG.equals(name)) {
+                parseViewTag(parser, parent, attrs);
+            } else if (TAG_INCLUDE.equals(name)) {
+                if (parser.getDepth() == 0) {
+                    throw new InflateException("<include /> cannot be the root element");
+                }
+                parseInclude(parser, context, parent, attrs);
+            } else if (TAG_MERGE.equals(name)) {
+                throw new InflateException("<merge /> must be the root element");
+            } else {
+                final View view = createViewFromTag(parent, name, context, attrs);
+                final ViewGroup viewGroup = (ViewGroup) parent;
+                final ViewGroup.LayoutParams params = viewGroup.generateLayoutParams(attrs);
+                rInflateChildren(parser, view, attrs, true);
+                viewGroup.addView(view, params);
+            }
+        }
+
+        if (pendingRequestFocus) {
+            parent.restoreDefaultFocus();
+        }
+
+        if (finishInflate) {
+            parent.onFinishInflate();
+        }
+    }
+```
 ## xml解析原理
 我们将编译得到的apk包拖至AS中，可以看到apk中的文件，其中有一个resources.arsc二进制文件，它是应用包中的资源映射 。
 
@@ -303,4 +356,3 @@ private @Nullable ResourcesImpl createResourcesImpl(@NonNull ResourcesKey key) {
 /*package*/ native final String getResourceTypeName(int resid);
 /*package*/ native final String getResourceEntryName(int resid);
 ```
-  mInstrumentation.callApplicationOnCreate(app);
