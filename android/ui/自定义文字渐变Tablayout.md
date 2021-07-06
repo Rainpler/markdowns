@@ -31,7 +31,7 @@ public void drawText(@NonNull String text, float x, float y, @NonNull Paint pain
 ![](../../res/文字的测量.jpg)
 红色的线是baseline基线，文字绘制的时候并不是贴在基线上的，对于不同的文字，他们都是以baseline为基准位置，然后做相对位置上的绘制。
 
-- top为上方可绘制范围的最大值，即文字的绘制向上不能超过的最大范围-
+- top为上方可绘制范围的最大值，即文字的绘制向上不能超过的最大范围
 - ascent为文字绘制的上界，即某个被绘制文字最顶端的的位置
 - bottom为下方可绘制范围的最大值，即文字的绘制向下不能超过的最大范围
 - descent为文字绘制的下界，即某个被绘制文字最低端的的位置。
@@ -48,7 +48,7 @@ public static class FontMetrics {
       public float   leading;
 }
 ```
-现在我们已经了解了文字绘制的基本知识了，那么我们如何才能灵活的绘制文字的位置呢，比如将文字绘制到View的中心位置。Canvas中的drawText中的基准坐标是baseline，所以我们这里要先算出baseline的位置才行。
+现在我们已经了解了文字绘制的基本知识了，那么我们如何才能灵活的绘制文字的位置呢，比如将文字绘制到View的中心位置。Canvas中的drawText是以baseline作为绘制的基准线的，所以我们这里要先算出baseline的位置才行。
 
 我们想要把文字绘制到中心的话，那就是文字的高度/2的位置(descent-ascent)/2，但由于descent的存在，文字的绘制并不是严格在baseline上，因此还要再减去一个descent的高度。得到baseline的位置为:
 ```java
