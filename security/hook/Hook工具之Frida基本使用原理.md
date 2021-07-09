@@ -70,9 +70,9 @@ def on_message(message, data):
     else:
         print(message)
 
-
-jscode = """
 # JavaScript代码段落：Hook方法插入处
+jscode = """
+
 Java.perform(function () {
 	var currentApplication = Java.use("android.app.ActivityThread").currentApplication();
 	var context = currentApplication.getApplicationContext();
@@ -139,10 +139,10 @@ public class People{
 | float类型      | float                   |
 | boolean类型    | boolean                 |
 | string类型     | java.lang.String        |
-| byte类型       | [B                      |
-| char类型       | [C                      |
-| list结构       | java.util.List          |
-| 安卓上下文结构 | android.content.Context |
+| byte类型       | byte                      |
+| char类型       | char                      |
+| List       | java.util.List          |
+| Context | android.content.Context |
 
 
 重写function(...)方法的时候，由于js是弱参数类型，所以我们在这里不用指定参数类型了。最后通过return，重新调用了原方法。

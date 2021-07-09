@@ -1,7 +1,7 @@
 # RxActivityResult
-<strong>一种优雅的方式实现==startActivityForResult==，将Android中的startActivityForResult()事件转换为Rx事件流</strong>  
+<strong>一种优雅的方式实现==startActivityForResult==，将Android中的startActivityForResult()事件转换为Rx事件流</strong>
 
-github地址：[https://github.com/VictorAlbertos/RxActivityResult](https://github.com/VictorAlbertos/RxActivityResult)  
+github地址：[https://github.com/VictorAlbertos/RxActivityResult](https://github.com/VictorAlbertos/RxActivityResult)
 作者：VictorAlbertos
 ## 常规写法
 - MainResultActivity(Result的请求者)
@@ -10,9 +10,10 @@ github地址：[https://github.com/VictorAlbertos/RxActivityResult](https://gith
 sequenceDiagram
 MainResultActivity->>SecondResultAcitivity: requestCode
 SecondResultAcitivity->>MainResultActivity: result
-```  
+```
 
 **MainResultActivity**
+
 ```java
 public class MainResultActivity extends AppCompatActivity {
 
@@ -40,9 +41,10 @@ public class MainResultActivity extends AppCompatActivity {
 
 }
 ```
+
 **SecondResultActivity**
 ```java
-public class SecondResultActivity extends AppCompatActivity {   
+public class SecondResultActivity extends AppCompatActivity {
 
     //我们省略其他无关紧要代码
     //发送Result数据给请求方，然后finish（）
@@ -97,11 +99,11 @@ public class MainResultActivity extends AppCompatActivity {
 **SecondResultActivity中的处理不变。
 startByRxActivityResult()方法中，一行代码的链式调用即可完成：**
 
-<blockquote>  
+<blockquote>
 
-① 打开新的界面，请求result  
-② 进行数据结果的处理  
-③ 不需要自己实现一个常量作为requestCode，并在请求result时传递进去  
+① 打开新的界面，请求result
+② 进行数据结果的处理
+③ 不需要自己实现一个常量作为requestCode，并在请求result时传递进去
 </blockquote>
 
 

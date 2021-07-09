@@ -250,4 +250,50 @@ private void makeTriangle(Canvas canvas, PointF startPoint, float findCenterLeng
 
 到这里，锦鲤的绘制就已经完成了，接下来我们来看锦鲤游动的动画该如何实现。
 ### 锦鲤的原地游动
+#### 属性动画
+我们看锦鲤的游动，包括了头部的摆动，尾部的摆动，其实都是角度的变化，因此我们可以用属性动画去实现。属性动画的运行机制是通过不断地对值进行操作来实，并将值赋值到指定对象的指定属性上，可以是任意对象的任意属性。所以我们仍然可以将一个View进行移动或者缩放，但同时也可以对自定义View中的Point对象进行动画操作了。我们只需要告诉系统动画的运行时长，需要执行哪种类型的动画，以及动画的初始值和结束值，剩下的工作就可以全部交给系统去完成了。
+##### ValueAnimator
+ValueAnimator是整个属性动画机制当中最核心的一个类，前面我们已经提到了，属性动画的运行机制是通过不断地对值进行操作来实现的，而初始值和结束值之间的动画过渡就是由ValueAnimator这个类来负责计算的。它的内部使用一种时间循环的机制来计算值与值之间的动画过渡，我们只需要将初始值和结束值提供给ValueAnimator，并且告诉它动画所需运行的时长，那么ValueAnimator就会自动帮我们完成从初始值平滑地过渡到结束值这样的效果。除此之外，ValueAnimator还负责管理动画的播放次数、播放模式、以及对动画设置监听器等，确实是一个非常重要的类。
+
+在三角函数中，sin的值域是从(-1,1)，而sin的周期360°，所以可以取属性的值域为(0,3600f)，来让锦鲤的摆动更加平滑，
+```java
+ ValueAnimator valueAnimator = ValueAnimator.ofFloat(0, 3600f);
+        // 动画周期
+        valueAnimator.setDuration(15 * 1000);
+        // 重复的模式：重新开始
+        valueAnimator.setRepeatMode(ValueAnimator.RESTART);
+        // 重复的次数
+        valueAnimator.setRepeatCount(ValueAnimator.INFINITE);
+        // 插值器
+        valueAnimator.setInterpolator(new LinearInterpolator());
+        valueAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animator) {
+                currentValue = (float) animator.getAnimatedValue();
+
+                invalidateSelf();
+            }
+        });
+        valueAnimator.start();
+```
+然后我们修改摆动的角度，从而让锦鲤产生游动的效果。
+```java
+// 鱼头朝向角度
+float fishAngle = (float) (fishMainAngle +Math.sin(Math.toRadians(currentValue * 1.2 * frequence)) * 10);
+
+// 三角形尾巴角度
+float triangelAngle = (float) (fishAngle + Math.sin(Math.toRadians(currentValue * 1.5 * frequence)) * 35);
+
+// 节肢角度
+float segmentAngle;
+if (hasBigCircle) {
+    // 节肢1
+    segmentAngle = (float) (fishAngle + Math.cos(Math.toRadians(currentValue * 1.5 * frequence)) * 15);
+} else {
+    // 节肢2
+    segmentAngle = (float) (fishAngle + Math.sin(Math.toRadians(currentValue * 1.5 * frequence)) * 35);
+}
+```
+
 ### 点击时的锦鲤游动
+我们看点击的时候的效果，
