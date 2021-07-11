@@ -250,7 +250,6 @@ private void makeTriangle(Canvas canvas, PointF startPoint, float findCenterLeng
 
 到这里，锦鲤的绘制就已经完成了，接下来我们来看锦鲤游动的动画该如何实现。
 ### 锦鲤的原地游动
-#### 属性动画
 我们看锦鲤的游动，包括了头部的摆动，尾部的摆动，其实都是角度的变化，因此我们可以用属性动画去实现。属性动画的运行机制是通过不断地对值进行操作来实，并将值赋值到指定对象的指定属性上，可以是任意对象的任意属性。所以我们仍然可以将一个View进行移动或者缩放，但同时也可以对自定义View中的Point对象进行动画操作了。我们只需要告诉系统动画的运行时长，需要执行哪种类型的动画，以及动画的初始值和结束值，剩下的工作就可以全部交给系统去完成了。
 ##### ValueAnimator
 ValueAnimator是整个属性动画机制当中最核心的一个类，前面我们已经提到了，属性动画的运行机制是通过不断地对值进行操作来实现的，而初始值和结束值之间的动画过渡就是由ValueAnimator这个类来负责计算的。它的内部使用一种时间循环的机制来计算值与值之间的动画过渡，我们只需要将初始值和结束值提供给ValueAnimator，并且告诉它动画所需运行的时长，那么ValueAnimator就会自动帮我们完成从初始值平滑地过渡到结束值这样的效果。除此之外，ValueAnimator还负责管理动画的播放次数、播放模式、以及对动画设置监听器等，确实是一个非常重要的类。
@@ -296,4 +295,54 @@ if (hasBigCircle) {
 ```
 
 ### 点击时的锦鲤游动
-我们看点击的时候的效果，
+我们看点击的时候的效果，在点击处会有放大的波纹点击效果，同时小鱼会调头向游动的方向游去。
+
+##### 波纹放大效果
+首先来看波纹的放大效果，我们同样是利用属性动画去实现，只不过这一次使用的是ObjectAnimator，它继承自ValueAnimator，相对于ValueAnimatior，可以直接操作控件。
+
+它通过改变 View 的属性值来改变控件的形态，说白了就是通过反射技术来获取控件的一些属性如alpha、scaleY等的get和 set方法，从而实现所谓的动画效果。所以，这就需要我们的View（如自定义 View 中）具有set和get方法，如果没有则会导致程序的crash。
+```java
+private float ripple;
+public float getRipple() {
+    return ripple;
+}
+
+public void setRipple(float ripple) {
+    // 透明度的变化 100 - 0
+    alpha = (int) (100 * (1 - ripple));
+    this.ripple = ripple;
+}
+
+@Override public boolean onTouchEvent(MotionEvent event)
+{
+   ...
+   ObjectAnimator objectAnimator = ObjectAnimator.ofFloat(this,  "ripple", 0, 1f)
+                                .setDuration(1000);
+   objectAnimator.start();
+   ...
+}
+
+ @Override
+protected void onDraw(Canvas canvas) {
+    super.onDraw(canvas);
+    canvas.drawCircle(touchX, touchY, ripple * 150, mPaint);
+    invalidate();
+}
+
+```
+##### 锦鲤的游动
+观察锦鲤的游动轨迹，首先是一个掉头的动作，然后是一个二阶贝塞尔曲线的路径。因此我们需要找到两个控制点，以鱼的重心O和触摸点B为起始点和终点，鱼头圆心A为第一控制点，取∠AOB的中线上的C点为第二控制点，可以得到二阶贝塞尔曲线如下。
+
+![](../../res/锦鲤二阶贝塞尔.jpg)
+
+那么如何确定C点的坐标呢，现在我们有A、O、B三点的坐标，通过向量夹角公式，我们可以得到cos∠AOB，再使用反三角函数就可以获得∠AOB。
+
+向量的夹角公式计算夹角cosAOB = (OA*OB)/(|OA|*|OB|)其中OA*OB是向量的数量积,计算过程如下：
+- OA=(Ax-Ox,Ay-Oy)
+- OB=(Bx-Ox,By-Oy)
+- OA*OB=(Ax-Ox)(Bx-Ox)+(Ay-Oy)*(By-Oy)
+  |OA|表示线段OA的模即OA的长度
+
+但是角度是有正负的，我们又如何确定∠AOB的大小呢。
+
+得到了∠AOB的大小后，则∠AOC = ½∠AOB，为了确定C点坐标，我们取OX轴线上的一点（Ox+1，Oy），得到
