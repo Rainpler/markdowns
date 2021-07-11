@@ -331,7 +331,7 @@ protected void onDraw(Canvas canvas) {
 
 ```
 ##### 锦鲤的游动
-观察锦鲤的游动轨迹，首先是一个掉头的动作，然后是一个二阶贝塞尔曲线的路径。因此我们需要找到两个控制点，以鱼的重心O和触摸点B为起始点和终点，鱼头圆心A为第一控制点，取∠AOB的中线上的C点为第二控制点，可以得到二阶贝塞尔曲线如下。
+观察锦鲤的游动轨迹，首先是一个掉头的动作，然后是一个三阶贝塞尔曲线的路径。因此我们需要找到两个控制点，以鱼的重心O和触摸点B为起始点和终点，鱼头圆心A为第一控制点，取∠AOB的中线上的C点为第二控制点，可以得到三阶贝塞尔曲线如下。
 
 ![](../../res/锦鲤二阶贝塞尔.jpg)
 
@@ -343,6 +343,96 @@ protected void onDraw(Canvas canvas) {
 - OA*OB=(Ax-Ox)(Bx-Ox)+(Ay-Oy)*(By-Oy)
   |OA|表示线段OA的模即OA的长度
 
-但是角度是有正负的，我们又如何确定∠AOB的大小呢。
+![](../../res/锦鲤游动方向.jpg)
 
-得到了∠AOB的大小后，则∠AOC = ½∠AOB，为了确定C点坐标，我们取OX轴线上的一点（Ox+1，Oy），得到
+除此之外，我们确定鱼身需要向左还是向右转弯，由此得到的∠AOB的正负也不一样。
+
+
+```java
+public float includeAngle(PointF O, PointF A, PointF B) {
+        // cosAOB
+        // OA*OB=(Ax-Ox)(Bx-Ox)+(Ay-Oy)*(By-Oy)
+        float AOB = (A.x - O.x) * (B.x - O.x) + (A.y - O.y) * (B.y - O.y);
+        float OALength = (float) Math.sqrt((A.x - O.x) * (A.x - O.x) + (A.y - O.y) * (A.y - O.y));
+        // OB 的长度
+        float OBLength = (float) Math.sqrt((B.x - O.x) * (B.x - O.x) + (B.y - O.y) * (B.y - O.y));
+        float cosAOB = AOB / (OALength * OBLength);
+
+        // 反余弦
+        float angleAOB = (float) Math.toDegrees(Math.acos(cosAOB));
+
+        // AB连线与X的夹角的tan值 - OB与x轴的夹角的tan值
+        float direction = (A.y - B.y) / (A.x - B.x) - (O.y - B.y) / (O.x - B.x);
+
+        if (direction == 0) {
+            if (AOB >= 0) {
+                return 0;
+            } else {
+                return 180;
+            }
+        } else {
+            if (direction > 0) {
+                return -angleAOB;
+            } else {
+                return angleAOB;
+            }
+        }
+
+    }
+```
+得到了∠AOB的大小α后，则∠AOC = ½∠AOB，为了确定C点坐标，我们取OX轴线上的一点（Ox+1，Oy），可以求出得到∠AOX的角度β，由于在角度计算时我们已经确定了∠AOB的正负，因此我们可以直接通过角度α/2+β得到控制点C的坐标。
+```java
+private void makeTrail() {
+
+        // 鱼的重心：相对ImageView坐标
+        PointF fishRelativeMiddle = fishDrawable.getMiddlePoint();
+        // 鱼的重心：绝对坐标 --- 起始点
+        PointF fishMiddle = new PointF(ivFish.getX() + fishRelativeMiddle.x, ivFish.getY() + fishRelativeMiddle.y);
+        // 鱼头圆心的坐标 -- 控制点1
+        final PointF fishHead = new PointF(ivFish.getX() + fishDrawable.getHeadPoint().x,
+                ivFish.getY() + fishDrawable.getHeadPoint().y);
+        // 点击坐标 -- 结束点
+        PointF touch = new PointF(touchX, touchY);
+
+        float angle = includeAngle(fishMiddle, fishHead, touch) / 2;
+        float delta = includeAngle(fishMiddle, new PointF(fishMiddle.x + 1, fishMiddle.y), fishHead);
+        // 控制点2 的坐标
+        PointF controlPoint = fishDrawable.calculatePoint(fishMiddle,
+                fishDrawable.getHEAD_RADIUS() * 1.6f, angle + delta);
+
+        Path path = new Path();
+        path.moveTo(fishMiddle.x - fishRelativeMiddle.x, fishMiddle.y - fishRelativeMiddle.y);
+        path.cubicTo(fishHead.x - fishRelativeMiddle.x, fishHead.y - fishRelativeMiddle.y,
+                controlPoint.x - fishRelativeMiddle.x, controlPoint.y - fishRelativeMiddle.y,
+                touchX - fishRelativeMiddle.x, touchY - fishRelativeMiddle.y);
+        ObjectAnimator objectAnimator = ObjectAnimator.ofFloat(ivFish, "x", "y", path);
+        objectAnimator.setDuration(2000);
+        objectAnimator.start();
+```
+这样一来，就可以控制鱼的点击游动了。在这里计算均采用相对坐标。为了实现鱼头的转向效果。我们利用PathMeasure类，可以确定path移动时候的切线位置，通过让鱼头与切线保持同样的角度，则可以实现鱼头的偏转。
+
+getPosTan(float distance, float pos[], float tan[])
+
+- distance : 这个参数就是确定要获取路径上哪个位置的点
+- pos[] ：根据distance返回点的坐标信息并保存在传入的pos[]内， X保存在pos[0], Y则在pos[1]
+- tan[] : 根据distance返回点的角度信息并保存传入tan[]内 ，主要结合float degree = (float) (Math.atan2(mTan[1], mTan[0]) * 180 / Math.PI);
+
+```java
+final PathMeasure pathMeasure = new PathMeasure(path, false);
+final float[] tan = new float[2];
+objectAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+    @Override
+    public void onAnimationUpdate(ValueAnimator animation) {
+//                animation.getAnimatedValue();
+        // 执行了整个周期的百分之多少
+        float fraction = animation.getAnimatedFraction();
+        pathMeasure.getPosTan(pathMeasure.getLength() * fraction, null, tan);
+        float angle = (float) Math.toDegrees(Math.atan2(-tan[1], tan[0]));
+        fishDrawable.setFishMainAngle(angle);
+    }
+});
+```
+
+这样一来，锦鲤的游动动画也就完成了。
+
+完整项目地址：
