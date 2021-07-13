@@ -415,7 +415,8 @@ getPosTan(float distance, float pos[], float tan[])
 
 - distance : 这个参数就是确定要获取路径上哪个位置的点
 - pos[] ：根据distance返回点的坐标信息并保存在传入的pos[]内， X保存在pos[0], Y则在pos[1]
-- tan[] : 根据distance返回点的角度信息并保存传入tan[]内 ，主要结合float degree = (float) (Math.atan2(mTan[1], mTan[0]) * 180 / Math.PI);
+- tan[] ：根据distance返回点的角度信息并保存传入tan[]内，tan[0]和tan[1]分别为单位圆的x和y坐标。
+  主要结合float degree = (float) (Math.atan2(mTan[1], mTan[0]) * 180 / Math.PI);
 
 ```java
 final PathMeasure pathMeasure = new PathMeasure(path, false);
@@ -423,10 +424,11 @@ final float[] tan = new float[2];
 objectAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
     @Override
     public void onAnimationUpdate(ValueAnimator animation) {
-//                animation.getAnimatedValue();
+//                animation.getAnimatedValuRecyclerView实现吸顶效果RecyclerView实现吸顶效果e();
         // 执行了整个周期的百分之多少
         float fraction = animation.getAnimatedFraction();
         pathMeasure.getPosTan(pathMeasure.getLength() * fraction, null, tan);
+        //这里取-tan[1]是因为在Android坐标系中，y轴向下为正，向上为负
         float angle = (float) Math.toDegrees(Math.atan2(-tan[1], tan[0]));
         fishDrawable.setFishMainAngle(angle);
     }
@@ -435,4 +437,4 @@ objectAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
 
 这样一来，锦鲤的游动动画也就完成了。
 
-完整项目地址：
+完整项目地址： https://github.com/Rainpler/Fish
