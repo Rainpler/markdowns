@@ -550,4 +550,4 @@ void scrapView(View view) {
 
 从源码来看，RecyclerView本身只是作为了一个`容器`，其itemView的排布方式都是通过`LayoutManager`去完成的，而回收复用机制又依赖于其`RecyclerView.Recycler`，回收复用的对象实际上是`ViewHolder`而不是itemview本身。
 
-而且通过追踪源码，我们理解了自定义Adapter时，onCreatViewHolder和onBindViewHolder方法的调用时机，从而明白了重写这两个方法的意义所在。
+而且通过追踪源码，我们理解了自定义Adapter时，`onCreatViewHolder`和`onBindViewHolder`方法的调用时机，从而明白了重写这两个方法的意义所在。

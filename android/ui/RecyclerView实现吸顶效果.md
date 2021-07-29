@@ -113,7 +113,7 @@ scheduleTraversals()会异步执行TraversalRunnable()，最后调用到performT
 
 ![](../../res/performTraversals.jpg)
 
-回到RecyclerView，当调用到draw()，首先会先调用super.draw()。
+回到RecyclerView，当调用到draw()，首先会先调用super.draw()，而后调用ItemDecoration.onDrawOver方法
 ```java
 @Override
 public void draw(Canvas c) {

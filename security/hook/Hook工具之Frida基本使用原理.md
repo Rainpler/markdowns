@@ -71,8 +71,8 @@ def on_message(message, data):
         print(message)
 
 # JavaScript代码段落：Hook方法插入处
-jscode = """
-
+jscode =
+"""
 Java.perform(function () {
 	var currentApplication = Java.use("android.app.ActivityThread").currentApplication();
 	var context = currentApplication.getApplicationContext();
