@@ -89,7 +89,7 @@ private boolean findInterceptingOnItemTouchListener(MotionEvent e) {
     return false;
 }
 ```
-那么我们来看ItemTOuchHelper中onInterceptTouchEvent方法的具体实现。
+那么我们来看mOnItemTouchListener中onInterceptTouchEvent方法的具体实现。
 ```java
 @Override
 public boolean onInterceptTouchEvent(@NonNull RecyclerView recyclerView,@NonNull MotionEvent event) {
@@ -207,7 +207,9 @@ void checkSelectForSwipe(int action, MotionEvent motionEvent, int pointerIndex) 
         select(vh, ACTION_STATE_SWIPE);
     }
 ```
-在该方法中，首先会先进行一系列的条件判断，选中的itemView不为空，事件不为滑动事件，不是拖拽事件，mCallback支持滑动。然后根据event的x,y判断触点在哪个itemview中，并获取得到ViewHolder，然后通过getAbsoluteMovementFlags方法获取支持的MOVE事件类型。接下来计算滑动是那一个方向的，如果滑动不包括left，right，down，up的话直接返回false，以下判断都满足后清空偏移距离，并调用select(vh, ACTION_STATE_SWIPE)，此时传入的状态是滑动状态。接下来看看这个方法。
+在该方法中，首先会先进行一系列的条件判断，选中的itemView不为空，事件不为滑动事件，不是拖拽事件，mCallback支持滑动。然后根据event的x,y判断触点在哪个itemview中，并获取得到ViewHolder，然后通过getAbsoluteMovementFlags方法获取支持的MOVE事件类型。
+
+接下来计算滑动是那一个方向的，如果滑动不包括left，right，down，up的话直接返回false，以下判断都满足后清空偏移距离，并调用select(vh, ACTION_STATE_SWIPE)，此时传入的状态是滑动状态。接下来看看这个方法。
 ```java
 void select(@Nullable ViewHolder selected, int actionState) {
     if (selected == mSelected && actionState == mActionState) {
@@ -222,15 +224,10 @@ void select(@Nullable ViewHolder selected, int actionState) {
         if (selected == null) {
             throw new IllegalArgumentException("Must pass a ViewHolder when dragging");
         }
-
-        // we remove after animation is complete. this means we only elevate the last drag
-        // child but that should perform good enough as it is very hard to start dragging a
-        // new child before the previous one settles.
         mOverdrawChild = selected.itemView;
         addChildDrawingOrderCallback();
     }
-    int actionStateMask = (1 << (DIRECTION_FLAG_COUNT + DIRECTION_FLAG_COUNT * actionState))
-            - 1;
+    int actionStateMask = (1 << (DIRECTION_FLAG_COUNT + DIRECTION_FLAG_COUNT * actionState)) - 1;
     boolean preventLayout = false;
 
     if (mSelected != null) {
@@ -239,7 +236,7 @@ void select(@Nullable ViewHolder selected, int actionState) {
             final int swipeDir = prevActionState == ACTION_STATE_DRAG ? 0
                     : swipeIfNecessary(prevSelected);
             releaseVelocityTracker();
-            // find where we should animate to
+            //计算targetXTranslateX/targetXTranslateY
             final float targetTranslateX, targetTranslateY;
             int animationType;
             switch (swipeDir) {
@@ -259,6 +256,7 @@ void select(@Nullable ViewHolder selected, int actionState) {
                     targetTranslateX = 0;
                     targetTranslateY = 0;
             }
+            // 标记动画状态为拖动
             if (prevActionState == ACTION_STATE_DRAG) {
                 animationType = ANIMATION_TYPE_DRAG;
             } else if (swipeDir > 0) {
@@ -269,6 +267,7 @@ void select(@Nullable ViewHolder selected, int actionState) {
             getSelectedDxDy(mTmpPosition);
             final float currentTranslateX = mTmpPosition[0];
             final float currentTranslateY = mTmpPosition[1];
+            //定义恢复动画
             final RecoverAnimation rv = new RecoverAnimation(prevSelected, animationType,
                     prevActionState, currentTranslateX, currentTranslateY,
                     targetTranslateX, targetTranslateY) {
@@ -278,12 +277,11 @@ void select(@Nullable ViewHolder selected, int actionState) {
                     if (this.mOverridden) {
                         return;
                     }
+                    //拖动或者滑动失败的方式
                     if (swipeDir <= 0) {
-                        // this is a drag or failed swipe. recover immediately
                         mCallback.clearView(mRecyclerView, prevSelected);
-                        // full cleanup will happen on onDrawOver
                     } else {
-                        // wait until remove animation is complete.
+                        // 滑动动画结束后，将动画加入缓存mPendingCleanup
                         mPendingCleanup.add(prevSelected.itemView);
                         mIsPendingCleanup = true;
                         if (swipeDir > 0) {
@@ -298,10 +296,12 @@ void select(@Nullable ViewHolder selected, int actionState) {
                     }
                 }
             };
+            //计算动画持续事件
             final long duration = mCallback.getAnimationDuration(mRecyclerView, animationType,
                     targetTranslateX - currentTranslateX, targetTranslateY - currentTranslateY);
             rv.setDuration(duration);
             mRecoverAnimations.add(rv);
+            //开始执行动画
             rv.start();
             preventLayout = true;
         } else {
@@ -317,19 +317,123 @@ void select(@Nullable ViewHolder selected, int actionState) {
         mSelectedStartX = selected.itemView.getLeft();
         mSelectedStartY = selected.itemView.getTop();
         mSelected = selected;
-
+        // 如果是拖动
         if (actionState == ACTION_STATE_DRAG) {
+            // 回调长按的反馈
             mSelected.itemView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         }
     }
     final ViewParent rvParent = mRecyclerView.getParent();
+    //通知Rv不拦截子view的事件
     if (rvParent != null) {
         rvParent.requestDisallowInterceptTouchEvent(mSelected != null);
     }
     if (!preventLayout) {
         mRecyclerView.getLayoutManager().requestSimpleAnimationsInNextLayout();
     }
+    //通知回调
     mCallback.onSelectedChanged(mSelected, mActionState);
+    //重新绘制
     mRecyclerView.invalidate();
 }
 ```
+这里的代码量也很多，这个方法的意思是，如果是滑动事件的话，计算获得位置的变化的信息，并将动画绑定到itemView上，最后回调mCallback.onSelectedChanged方法，并调用mRecyclerView的重绘。
+
+也就是说onInterceptTouchEvent，主要实现了对选中itemView的各项赋值，只要存在满足条件的itemView，拦截事件成立，将执行onTouchEvent事件。
+```java
+@Override
+public void onTouchEvent(@NonNull RecyclerView recyclerView, @NonNull MotionEvent event) {
+    mGestureDetector.onTouchEvent(event);
+    if (mVelocityTracker != null) {
+        mVelocityTracker.addMovement(event);
+    }
+    if (mActivePointerId == ACTIVE_POINTER_ID_NONE) {
+        return;
+    }
+    final int action = event.getActionMasked();
+    final int activePointerIndex = event.findPointerIndex(mActivePointerId);
+    if (activePointerIndex >= 0) {
+        checkSelectForSwipe(action, event, activePointerIndex);
+    }
+    ViewHolder viewHolder = mSelected;
+    if (viewHolder == null) {
+        return;
+    }
+    switch (action) {
+        case MotionEvent.ACTION_MOVE: {
+            // Find the index of the active pointer and fetch its position
+            if (activePointerIndex >= 0) {
+                //更新mDx,mdy
+                updateDxDy(event, mSelectedFlags, activePointerIndex);
+                //处理拖拽事件
+                moveIfNecessary(viewHolder);
+                mRecyclerView.removeCallbacks(mScrollRunnable);
+                mScrollRunnable.run();
+                mRecyclerView.invalidate();
+            }
+            break;
+        }
+        case MotionEvent.ACTION_CANCEL:
+            if (mVelocityTracker != null) {
+                mVelocityTracker.clear();
+            }
+            // fall through
+        case MotionEvent.ACTION_UP:
+            select(null, ACTION_STATE_IDLE);
+            mActivePointerId = ACTIVE_POINTER_ID_NONE;
+            break;
+        case MotionEvent.ACTION_POINTER_UP: {
+            final int pointerIndex = event.getActionIndex();
+            final int pointerId = event.getPointerId(pointerIndex);
+            if (pointerId == mActivePointerId) {
+                // This was our active pointer going up. Choose a new
+                // active pointer and adjust accordingly.
+                final int newPointerIndex = pointerIndex == 0 ? 1 : 0;
+                mActivePointerId = event.getPointerId(newPointerIndex);
+                updateDxDy(event, mSelectedFlags, pointerIndex);
+            }
+            break;
+        }
+    }
+}
+```
+在onInterceptTouchEvent方法中，已经确定了选中的itemview，因此在onTouchEvent方法中只需要负责对滑动事件的处理即可。我们来看代码，通过updateDxDy方法记录了水平偏移量mDx和竖直偏移量mDy，而moveIfNecessary方法中，如果是拖拽事件，则直接返回。因此我们来看RecyclerView的onDraw方法。
+
+在RecyclerView之实现吸顶效果一文中，就已经介绍过ItemDecoration一类。回调RecyclerView的onDraw方法会依次调用ItemDecoration的onDraw和onDrawOver方法。而ItemTouchHelper又继承自ItemDecoration，因此我们来看一下它的onDraw方法。
+```java
+@Override
+public void onDraw(Canvas c, RecyclerView parent, RecyclerView.State state) {
+    // we don't know if RV changed something so we should invalidate this index.
+    mOverdrawChildPosition = -1;
+    float dx = 0, dy = 0;
+    if (mSelected != null) {
+        getSelectedDxDy(mTmpPosition);
+        dx = mTmpPosition[0];
+        dy = mTmpPosition[1];
+    }
+    mCallback.onDraw(c, parent, mSelected,
+            mRecoverAnimations, mActionState, dx, dy);
+}
+```
+在该方法中，计算选中的itemView新的偏移量，然后回调mCallback.onDraw()方法。
+```java
+void onDraw(Canvas c, RecyclerView parent, ViewHolder selected,
+          List<ItemTouchHelper.RecoverAnimation> recoverAnimationList,
+          int actionState, float dX, float dY) {
+      final int recoverAnimSize = recoverAnimationList.size();
+      for (int i = 0; i < recoverAnimSize; i++) {
+          final ItemTouchHelper.RecoverAnimation anim = recoverAnimationList.get(i);
+          anim.update();
+          final int count = c.save();
+          onChildDraw(c, parent, anim.mViewHolder, anim.mX, anim.mY, anim.mActionState,
+                  false);
+          c.restoreToCount(count);
+      }
+      if (selected != null) {
+          final int count = c.save();
+          onChildDraw(c, parent, selected, dX, dY, actionState, true);
+          c.restoreToCount(count);
+      }
+  }
+```
+每次重新选择itemView的时候，已经标记为选中的itemView绑定的anim会被移除，所以最后走slected!=null的onChildDraw方法。
