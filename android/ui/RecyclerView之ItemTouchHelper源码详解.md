@@ -397,7 +397,7 @@ public void onTouchEvent(@NonNull RecyclerView recyclerView, @NonNull MotionEven
     }
 }
 ```
-在onInterceptTouchEvent方法中，已经确定了选中的itemview，因此在onTouchEvent方法中只需要负责对滑动事件的处理即可。我们来看代码，通过updateDxDy方法记录了水平偏移量mDx和竖直偏移量mDy，而moveIfNecessary方法中，如果是拖拽事件，则直接返回。因此我们来看RecyclerView的onDraw方法。
+在onInterceptTouchEvent方法中，已经确定了选中的itemview，因此在onTouchEvent方法中只需要负责对滑动事件的处理即可。我们来看代码，通过updateDxDy方法记录了水平偏移量mDx和竖直偏移量mDy，而moveIfNecessary方法中，如果不是拖拽事件，则直接返回。因此我们来看RecyclerView的onDraw方法。
 
 在RecyclerView之实现吸顶效果一文中，就已经介绍过ItemDecoration一类。回调RecyclerView的onDraw方法会依次调用ItemDecoration的onDraw和onDrawOver方法。而ItemTouchHelper又继承自ItemDecoration，因此我们来看一下它的onDraw方法。
 ```java
@@ -436,4 +436,391 @@ void onDraw(Canvas c, RecyclerView parent, ViewHolder selected,
       }
   }
 ```
-每次重新选择itemView的时候，已经标记为选中的itemView绑定的anim会被移除，所以最后走slected!=null的onChildDraw方法。
+每次重新通过select方法选择itemView的时候，已经标记为选中的itemView绑定的anim会被移除，所以最后走slected!=null的onChildDraw方法。而onChildDraw最后会走到ItemTouchUIUtilImpl的onDraw方法，并通过dX、dY对view进行一个位置的偏移，到这里就是滑动效果的实现。
+```java
+@Override
+public void onDraw(Canvas c, RecyclerView recyclerView, View view, float dX, float dY,
+        int actionState, boolean isCurrentlyActive) {
+
+    view.setTranslationX(dX);
+    view.setTranslationY(dY);
+}
+```
+接下来看拖拽效果的实现，长按的时候才会产生拖拽事件，而长按事件的处理是通过手势识别器来进行的。在初始化代码setupCallback函数中，会调用startGestureDetection函数。
+```java
+private void startGestureDetection() {
+    mItemTouchHelperGestureListener = new ItemTouchHelperGestureListener();
+    mGestureDetector = new GestureDetectorCompat(mRecyclerView.getContext(),
+            mItemTouchHelperGestureListener);
+}
+```
+在该方法中，会初始化ItemTouchHelperGestureListener，并绑定到mGestureDetector上。由于mOnItemTouchListener不为空，所以会拦截事件，接下来走到ItemTouchHelper的onTouchEvent事件，并调用mGestureDetector.onTouchEvent(event)，最后调用到 mDetector.onTouchEvent(ev)中的实现。
+```java
+public boolean onTouchEvent(MotionEvent ev) {
+    if (mInputEventConsistencyVerifier != null) {
+        mInputEventConsistencyVerifier.onTouchEvent(ev, 0);
+    }
+
+    final int action = ev.getAction();
+
+    if (mCurrentMotionEvent != null) {
+        mCurrentMotionEvent.recycle();
+    }
+    mCurrentMotionEvent = MotionEvent.obtain(ev);
+
+    if (mVelocityTracker == null) {
+        mVelocityTracker = VelocityTracker.obtain();
+    }
+    mVelocityTracker.addMovement(ev);
+
+    final boolean pointerUp =
+            (action & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_POINTER_UP;
+    final int skipIndex = pointerUp ? ev.getActionIndex() : -1;
+    final boolean isGeneratedGesture =
+            (ev.getFlags() & MotionEvent.FLAG_IS_GENERATED_GESTURE) != 0;
+
+    // Determine focal point
+    float sumX = 0, sumY = 0;
+    final int count = ev.getPointerCount();
+    for (int i = 0; i < count; i++) {
+        if (skipIndex == i) continue;
+        sumX += ev.getX(i);
+        sumY += ev.getY(i);
+    }
+    final int div = pointerUp ? count - 1 : count;
+    final float focusX = sumX / div;
+    final float focusY = sumY / div;
+
+    boolean handled = false;
+
+    switch (action & MotionEvent.ACTION_MASK) {
+        case MotionEvent.ACTION_POINTER_DOWN:
+            mDownFocusX = mLastFocusX = focusX;
+            mDownFocusY = mLastFocusY = focusY;
+            // Cancel long press and taps
+            cancelTaps();
+            break;
+
+        case MotionEvent.ACTION_POINTER_UP:
+            mDownFocusX = mLastFocusX = focusX;
+            mDownFocusY = mLastFocusY = focusY;
+
+            // Check the dot product of current velocities.
+            // If the pointer that left was opposing another velocity vector, clear.
+            mVelocityTracker.computeCurrentVelocity(1000, mMaximumFlingVelocity);
+            final int upIndex = ev.getActionIndex();
+            final int id1 = ev.getPointerId(upIndex);
+            final float x1 = mVelocityTracker.getXVelocity(id1);
+            final float y1 = mVelocityTracker.getYVelocity(id1);
+            for (int i = 0; i < count; i++) {
+                if (i == upIndex) continue;
+
+                final int id2 = ev.getPointerId(i);
+                final float x = x1 * mVelocityTracker.getXVelocity(id2);
+                final float y = y1 * mVelocityTracker.getYVelocity(id2);
+
+                final float dot = x + y;
+                if (dot < 0) {
+                    mVelocityTracker.clear();
+                    break;
+                }
+            }
+            break;
+
+        case MotionEvent.ACTION_DOWN:
+            if (mIsLongpressEnabled) {
+                mHandler.removeMessages(LONG_PRESS);
+                mHandler.sendMessageAtTime(
+                        mHandler.obtainMessage(
+                                LONG_PRESS,
+                                TOUCH_GESTURE_CLASSIFIED__CLASSIFICATION__LONG_PRESS,
+                                0 /* arg2 */),
+                        mCurrentDownEvent.getDownTime()
+                                + ViewConfiguration.getLongPressTimeout());
+            }
+            mHandler.sendEmptyMessageAtTime(SHOW_PRESS,
+                    mCurrentDownEvent.getDownTime() + TAP_TIMEOUT);
+            handled |= mListener.onDown(ev);
+            break;
+
+        case MotionEvent.ACTION_MOVE:
+
+            final boolean deepPress =
+                    motionClassification == MotionEvent.CLASSIFICATION_DEEP_PRESS;
+            if (deepPress && hasPendingLongPress) {
+                mHandler.removeMessages(LONG_PRESS);
+                mHandler.sendMessage(
+                        mHandler.obtainMessage(
+                              LONG_PRESS,
+                              TOUCH_GESTURE_CLASSIFIED__CLASSIFICATION__DEEP_PRESS,
+                              0 /* arg2 */));
+            }
+            break;
+
+        case MotionEvent.ACTION_UP:
+            mStillDown = false;
+            MotionEvent currentUpEvent = MotionEvent.obtain(ev);
+            if (mIsDoubleTapping) {
+                // Finally, give the up event of the double-tap
+                recordGestureClassification(
+                        TOUCH_GESTURE_CLASSIFIED__CLASSIFICATION__DOUBLE_TAP);
+                handled |= mDoubleTapListener.onDoubleTapEvent(ev);
+            } else if (mInLongPress) {
+                mHandler.removeMessages(TAP);
+                mInLongPress = false;
+            } else if (mAlwaysInTapRegion && !mIgnoreNextUpEvent) {
+                recordGestureClassification(
+                        TOUCH_GESTURE_CLASSIFIED__CLASSIFICATION__SINGLE_TAP);
+                handled = mListener.onSingleTapUp(ev);
+                if (mDeferConfirmSingleTap && mDoubleTapListener != null) {
+                    mDoubleTapListener.onSingleTapConfirmed(ev);
+                }
+            } else if (!mIgnoreNextUpEvent) {
+
+                // A fling must travel the minimum tap distance
+                final VelocityTracker velocityTracker = mVelocityTracker;
+                final int pointerId = ev.getPointerId(0);
+                velocityTracker.computeCurrentVelocity(1000, mMaximumFlingVelocity);
+                final float velocityY = velocityTracker.getYVelocity(pointerId);
+                final float velocityX = velocityTracker.getXVelocity(pointerId);
+
+                if ((Math.abs(velocityY) > mMinimumFlingVelocity)
+                        || (Math.abs(velocityX) > mMinimumFlingVelocity)) {
+                    handled = mListener.onFling(mCurrentDownEvent, ev, velocityX, velocityY);
+                }
+            }
+            if (mPreviousUpEvent != null) {
+                mPreviousUpEvent.recycle();
+            }
+            // Hold the event we obtained above - listeners may have changed the original.
+            mPreviousUpEvent = currentUpEvent;
+            if (mVelocityTracker != null) {
+                // This may have been cleared when we called out to the
+                // application above.
+                mVelocityTracker.recycle();
+                mVelocityTracker = null;
+            }
+            mIsDoubleTapping = false;
+            mDeferConfirmSingleTap = false;
+            mIgnoreNextUpEvent = false;
+            mHandler.removeMessages(SHOW_PRESS);
+            mHandler.removeMessages(LONG_PRESS);
+            break;
+
+        case MotionEvent.ACTION_CANCEL:
+            cancel();
+            break;
+    }
+
+    if (!handled && mInputEventConsistencyVerifier != null) {
+        mInputEventConsistencyVerifier.onUnhandledEvent(ev, 0);
+    }
+    return handled;
+}
+```
+如果处于LongPress状态的话，则通过handler发送  LONG_PRESS的消息
+```java
+mHandler.sendMessage(
+      mHandler.obtainMessage(
+          LONG_PRESS,
+          TOUCH_GESTURE_CLASSIFIED__CLASSIFICATION__DEEP_PRESS,
+          0 /* arg2 */));
+```
+然后在handleMessage函数中处理，
+```java
+@Override
+public void handleMessage(Message msg) {
+    switch (msg.what) {
+        case LONG_PRESS:
+            recordGestureClassification(msg.arg1);
+            dispatchLongPress();
+            break;
+```
+再继续看dispatchLongPress函数
+```java
+private void dispatchLongPress() {
+    mHandler.removeMessages(TAP);
+    mDeferConfirmSingleTap = false;
+    mInLongPress = true;
+    mListener.onLongPress(mCurrentDownEvent);
+}
+```
+然后会进一步调用  mListener.onLongPress，而mListener是什么，就是我们一开始初始化的OmItemTouchHelperGestureListener对象。
+```java
+@Override
+public void onLongPress(MotionEvent e) {
+    if (!mShouldReactToLongPress) {
+        return;
+    }
+    View child = findChildView(e);
+    if (child != null) {
+        ViewHolder vh = mRecyclerView.getChildViewHolder(child);
+        if (vh != null) {
+            if (!mCallback.hasDragFlag(mRecyclerView, vh)) {
+                return;
+            }
+            int pointerId = e.getPointerId(0);
+
+            if (pointerId == mActivePointerId) {
+                final int index = e.findPointerIndex(mActivePointerId);
+                final float x = e.getX(index);
+                final float y = e.getY(index);
+                mInitialTouchX = x;
+                mInitialTouchY = y;
+                mDx = mDy = 0f;
+
+                if (mCallback.isLongPressDragEnabled()) {
+                    select(vh, ACTION_STATE_DRAG);
+                }
+            }
+        }
+    }
+}
+```
+当发生长按事件的时候，标记x、y的坐标，然后通过mCallback.isLongPressDragEnabled()判断是否允许长按，并调用select(vh, ACTION_STATE_DRAG)，选中itemview。然后移动的时候我们继续看OnItemTouchListener的onTouchEvent函数。
+```java
+@Override
+public void onTouchEvent(@NonNull RecyclerView recyclerView, @NonNull MotionEvent event) {
+   mGestureDetector.onTouchEvent(event);
+
+   if (mVelocityTracker != null) {
+       mVelocityTracker.addMovement(event);
+   }
+   if (mActivePointerId == ACTIVE_POINTER_ID_NONE) {
+       return;
+   }
+   final int action = event.getActionMasked();
+   final int activePointerIndex = event.findPointerIndex(mActivePointerId);
+   if (activePointerIndex >= 0) {
+       checkSelectForSwipe(action, event, activePointerIndex);
+   }
+   ViewHolder viewHolder = mSelected;
+   if (viewHolder == null) {
+       return;
+   }
+   switch (action) {
+       case MotionEvent.ACTION_MOVE: {
+           // Find the index of the active pointer and fetch its position
+           if (activePointerIndex >= 0) {
+               updateDxDy(event, mSelectedFlags, activePointerIndex);
+               moveIfNecessary(viewHolder);
+               mRecyclerView.removeCallbacks(mScrollRunnable);
+               mScrollRunnable.run();
+               mRecyclerView.invalidate();
+           }
+           break;
+       }
+       case MotionEvent.ACTION_CANCEL:
+           if (mVelocityTracker != null) {
+               mVelocityTracker.clear();
+           }
+           // fall through
+       case MotionEvent.ACTION_UP:
+           select(null, ACTION_STATE_IDLE);
+           mActivePointerId = ACTIVE_POINTER_ID_NONE;
+           break;
+       case MotionEvent.ACTION_POINTER_UP: {
+           final int pointerIndex = event.getActionIndex();
+           final int pointerId = event.getPointerId(pointerIndex);
+           if (pointerId == mActivePointerId) {
+               // This was our active pointer going up. Choose a new
+               // active pointer and adjust accordingly.
+               final int newPointerIndex = pointerIndex == 0 ? 1 : 0;
+               mActivePointerId = event.getPointerId(newPointerIndex);
+               updateDxDy(event, mSelectedFlags, pointerIndex);
+           }
+           break;
+       }
+   }
+}
+```
+如果是ACTION_MOVE事件的话，首先通过updateDxDy更新偏移量，然后调用moveIfNecessary()。
+```java
+void moveIfNecessary(ViewHolder viewHolder) {
+    if (mRecyclerView.isLayoutRequested()) {
+        return;
+    }
+    if (mActionState != ACTION_STATE_DRAG) {
+        return;
+    }
+// 计算新的位置的left，top
+    final float threshold = mCallback.getMoveThreshold(viewHolder);
+    final int x = (int) (mSelectedStartX + mDx);
+    final int y = (int) (mSelectedStartY + mDy);
+    // 最后将要达到的位置小于原来位置的高和宽的一半的话直接返回
+    if (Math.abs(y - viewHolder.itemView.getTop()) < viewHolder.itemView.getHeight() * threshold
+            && Math.abs(x - viewHolder.itemView.getLeft())
+            < viewHolder.itemView.getWidth() * threshold) {
+        return;
+    }
+    List<ViewHolder> swapTargets = findSwapTargets(viewHolder);
+    if (swapTargets.size() == 0) {
+        return;
+    }
+    // 获取碰撞的target view
+    ViewHolder target = mCallback.chooseDropTarget(viewHolder, swapTargets, x, y);
+    if (target == null) {
+        mSwapTargets.clear();
+        mDistances.clear();
+        return;
+    }
+    final int toPosition = target.getAdapterPosition();
+    final int fromPosition = viewHolder.getAdapterPosition();
+
+		// 回调mCallback的onMove方法
+    if (mCallback.onMove(mRecyclerView, viewHolder, target)) {
+        // keep target visible
+        mCallback.onMoved(mRecyclerView, viewHolder, fromPosition,
+                target, toPosition, x, y);
+    }
+}
+```
+这个方法根据选中的itemView的将要偏移的值，算出和其他的itemView那些发生了碰撞，如果发生了碰撞的话，并从中选择出目标的viewHolder，然后回调mCallback.onMove方法，该方法需要我们自己实现。最后ACTION_UP事件的时候，则通过select(null, ACTION_STATE_IDLE)将选中的itemView置为null，最后手指抬起的时候将会执行动画RecoverAnimation。
+```java
+public void onAnimationEnd(ValueAnimatorCompat animation) {
+	super.onAnimationEnd(animation);
+	if (this.mOverridden) {
+		return;
+	}
+	// 上面计算的swipeDir《=0的时候，就是拖动或者滑动失败的方式
+	if (swipeDir <= 0) {
+		mCallback.clearView(mRecyclerView, prevSelected);
+	} else {
+		// 滑动动画结束后，将动画加入缓存mPendingCleanup
+		mPendingCleanup.add(prevSelected.itemView);
+		mIsPendingCleanup = true;
+		if (swipeDir > 0) {
+			postDispatchSwipe(this, swipeDir);
+		}
+	}
+	if (mOverdrawChild == prevSelected.itemView) {
+		removeChildDrawingOrderCallbackIfNecessary(prevSelected.itemView);
+	}
+}
+```
+最后会调用postDispatchSwipe方法。
+```java
+void postDispatchSwipe(final RecoverAnimation anim, final int swipeDir) {
+        // wait until animations are complete.
+    mRecyclerView.post(new Runnable() {
+        @Override
+        public void run() {
+            if (mRecyclerView != null && mRecyclerView.isAttachedToWindow()
+                    && !anim.mOverridden
+                    && anim.mViewHolder.getAdapterPosition() != RecyclerView.NO_POSITION) {
+                final RecyclerView.ItemAnimator animator = mRecyclerView.getItemAnimator();
+                //当动画为空，或者不在running状态的情况下
+                if ((animator == null || !animator.isRunning(null))
+                        && !hasRunningRecoverAnim()) {
+                    mCallback.onSwiped(anim.mViewHolder, swipeDir);
+                } else {
+                    mRecyclerView.post(this);
+                }
+            }
+        }
+    });
+}
+```
+当动画被清空或者不再执行的情况下，就会调用mCallback.onSwiped()方法移除当前的选中itemview，该方法也是需要自己实现的，否则则会继续回调自身，等待动画的结束。
+
+到这里整个ItemTouchHelper的执行流程就阅读完毕了，总结如下：
