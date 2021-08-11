@@ -1,7 +1,7 @@
 我们在
 
-### ViewPager 缓存页面
-#### setOffscreenPageLimit
+### ViewPager 页面缓存
+
 在使用ViewPager的时候，我们通常会使用setOffscreenPageLimit(int limit)方法来缓存界面，通过传入limit变量，控制缓存的页面数目。
 
 实际上，传入的limit值并不是说缓存页面数目为1，而是以当前选中Fragment为中心，前后各缓存的页面数目。因此，setOffscreenPageLimit(1)实际缓存的最大页面数目为2个，limit=2 的话，实际缓存的最大页面数目为4个。如果当前Fragment为第一个或者最后一个，则只会缓存左边或者右边的页面。我们来看一下ViewPager是如何实现页面的缓存的。
@@ -54,6 +54,7 @@ void populate(int newCurrentItem) {
     }
 
     // mItems 中可能会找不到 curItem，需要 addNewItem
+    // addNewItem 函数中会调用mAdapter.instantiateItem(this, position)创建新的视图
     if (curItem == null && N > 0) {
         curItem = addNewItem(mCurItem, curIndex);
     }
@@ -168,9 +169,110 @@ static class ItemInfo {
     float offset;       // 当前页面在所有已加载的页面中的索引
 }
 ```
-同时，在这里还涉及了adapter的几个基本方法。当开始更新的时候，先调用mAdapter.startUpdate(this)
-```java
+同时，在这里还涉及了adapter的几个基本方法，几乎是整个adapter的生命周期。
+- **startUpdate()**  　开始更新事务
+- **instantiateItem()**　 创建页面视图
+- **destroyItem()**  　销毁页面视图
+- **setPrimaryItem()**　设置当前选中页面
+- **finishUpdate()** 　结束更新事务
 
-但是预加载也会带来相应的问题，当预加载了P3，P4时，虽然它们还未可见，但是仍会请求服务器大量数据导致卡顿。我们可以使用懒加载解决预加载带来的问题
+![](../../res/adapter示意图.jpg)
+
+但是预加载也会带来相应的问题，例如当预加载了P3，P4时，虽然它们还未可见，但是仍会请求服务器大量数据导致卡顿。为了解决这个问题，我们可以使用懒加载机制。
+
 ### ViewPager懒加载机制
+懒加载，其实也就是延迟加载,就是等到该页面的UI展示给用户时，再加载该页面的数据(从网络、 数据库等)，而不是依靠ViewPager预加载机制提前加载两三个， 甚至更多页面的数据。这样可以提高所属Activity的初始化速度，也可以为用户节省流量。而这种懒加载的方式也已经/正在被诸多APP所采用。
+
+为了学习ViewPager的懒加载机制，首先我们要了解ViewPager的源码。
+
+#### ViewPager的适配器原理
+
+>ViewPager要展示数据，必须绑定Adapter适配器，通过适配器完成数据的准备、展示和销毁工作。
+
+Android为我们提供了PagerAdapter的基本抽象类，由此衍生出FragmentPagerAdapter与FragmentStatePagerAdapter两个实现类。我们主要来看
+```java
+public abstract class PagerAdapter {
+    private final DataSetObservable mObservable = new DataSetObservable();
+    private DataSetObserver mViewPagerObserver;
+
+    public static final int POSITION_UNCHANGED = -1;
+    public static final int POSITION_NONE = -2;
+
+
+    public abstract int getCount();
+
+    //准备适配
+    public void startUpdate(@NonNull ViewGroup container) {
+        startUpdate((View) container);
+    }
+
+    //准备适配的数据
+    @NonNull
+    public Object instantiateItem(@NonNull ViewGroup container, int position) {
+        return instantiateItem((View) container, position);
+    }
+
+    //销毁适配的item数据
+    public void destroyItem(@NonNull ViewGroup container, int position, @NonNull Object object) {
+        destroyItem((View) container, position, object);
+    }
+    //设置当前显示的item数据
+    public void setPrimaryItem(@NonNull ViewGroup container, int position, @NonNull Object object) {
+        setPrimaryItem((View) container, position, object);
+    }
+
+    //结束适配
+    public void finishUpdate(@NonNull ViewGroup container) {
+        finishUpdate((View) container);
+    }
+
+}
+```
+我们在分析populate函数的时候，就会调用到adapter的几个重要方法。我们来FragmentPagerAdapter中的实现。
+```java
+@Override
+public void startUpdate(@NonNull ViewGroup container) {
+    if (container.getId() == View.NO_ID) {
+        throw new IllegalStateException("ViewPager with adapter " + this
+                + " requires a view id");
+    }
+}
+```
+开始适配阶段，实现中只做了有效性的判断，并没有做其他处理。接下来是instantiateItem函数的实现。
+```java
+public Object instantiateItem(@NonNull ViewGroup container, int position) {
+    //初始化mCurTransaction
+    if (mCurTransaction == null) {
+        mCurTransaction = mFragmentManager.beginTransaction();
+    }
+
+
+    final long itemId = getItemId(position);
+
+    // Do we already have this fragment?
+    String name = makeFragmentName(container.getId(), itemId);
+    Fragment fragment = mFragmentManager.findFragmentByTag(name);
+    if (fragment != null) {
+        if (DEBUG) Log.v(TAG, "Attaching item #" + itemId + ": f=" + fragment);
+        mCurTransaction.attach(fragment);
+    } else {
+        fragment = getItem(position);
+        if (DEBUG) Log.v(TAG, "Adding item #" + itemId + ": f=" + fragment);
+        mCurTransaction.add(container.getId(), fragment,
+                makeFragmentName(container.getId(), itemId));
+    }
+    if (fragment != mCurrentPrimaryItem) {
+        fragment.setMenuVisibility(false);
+        if (mBehavior == BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT) {
+            mCurTransaction.setMaxLifecycle(fragment, Lifecycle.State.STARTED);
+        } else {
+            fragment.setUserVisibleHint(false);
+        }
+    }
+    return fragment;
+}
+```
+
+
+
 ### ViewPager1与ViewPager2的差异化
