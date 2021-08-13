@@ -397,7 +397,7 @@ public abstract class LazyFragment extends Fragment {
     }
     abstract int getContentViewId();
 
-    abstract void initView();
+    abstract void initView(View view);
     //真正懒加载实现
     abstract void onLazyLoad();
 
@@ -412,6 +412,7 @@ public abstract class LazyFragment extends Fragment {
 
 **Use{@link FragmentTransaction#setMaxLifecycle(Fragment, Lifecycle.State)} instead.**
 
+##### setMaxLifecycle方法
 写明了通过FragmentTransaction的setMaxLifecycle(Fragment, Lifecycle.State)方法来代替setUserVisibleHint的使用。那么我们来看一下这个方法：
 ```java
 @NonNull
@@ -425,7 +426,7 @@ public FragmentTransaction setMaxLifecycle(@NonNull Fragment fragment,
 
 该方法需要传入两个对象，一个是fragment，根据注释我们知道，传入的fragment必须是已经通过`add()`方法添加到FragmentManager或者是transaction中了。
 
-而Lifecycle.State是Lifecycle中的一个枚举类:
+[Lifecycle](https://developer.android.google.cn/topic/libraries/architecture/lifecycle) 是 Android Jetpack 中的架构组件之一，用于帮助我们方便地管理 Activity 和 Fragment 的生命周期，而Lifecycle.State是Lifecycle中的一个枚举类:
 ```java
 public enum State {
     DESTROYED,  //在onDestroy之前
@@ -449,3 +450,255 @@ static final int RESUMED = 4;          // Created started and resumed.
 由于传入的是Lifecycle.State，我们需要将它与Fragment状态的周期一一对应，才能起到对Fragment状态的限制。且看下图：
 
 ![](../../res/Fragment与Lifecycle对应.jpg)
+
+图中展示了Fragment从不同状态切换时所对应的生命周期方法，以及Lifecycle.State对应的状态。
+
+由于`setMaxLifecycle()`方法要求传入的state至少为CREATED，因此我们只需要研究CREATED、STARTED、RESUMED这三个状态，结合上图解释一下`setMaxLifecycle()`方法的作用。
+- **当参数Lifecycle.State为CREATED时**
+
+**Lifecycle.State.CREATED** 对应 Fragment 的 **CREATED** 状态，如果当前 Fragment 状态低于 **CREATED**，也就是 **INITIALIZING**，那么 Fragment 的状态会变为 **CREATED**，依次执行`onAttach()`、`onCreate()`方法；如果当前 Fragment 状态高于 **CREATED**，那么 Fragment 的状态会被强制降为 **CREATED**，以当前 Fragment 状态为 **RESUMED** 为例，接下来会依次执行`onPause()`、`onStop()`和`onDestroyView()`方法。如果当前 Fragment 的状态恰好为 **CREATED**，那么就什么都不做。
+
+接下来以实例来说明：
+```java
+transaction = getSupportFragmentManager().beginTransaction();
+fragment = MyFragment.newInstance(0);
+transaction.add(fragment, "fragment");
+transaction.setMaxLifecycle(fragment, Lifecycle.State.CREATED);
+transaction.commit();
+```
+Fragment的生命周期方法执行如下：
+```java
+MyFragment: 0 fragment onAttach:
+MyFragment: 0 fragment onCreate:
+```
+可以看出，由于传入了**Lifecycle.State.CREATED**，所以Fragment的状态只能到达CREATED，因此不会执行后面的onCreateView()~onResume()。接下来是个降级的例子。
+```java
+transaction = getSupportFragmentManager().beginTransaction();
+fragment = MyFragment.newInstance(0);
+transaction.add(fragment, "fragment");
+transaction.commit();
+new Handler().postDelayed(new Runnable() {
+    @Override
+    public void run() {
+        transaction = getSupportFragmentManager().beginTransaction();
+        transaction.setMaxLifecycle(fragment, Lifecycle.State.CREATED);
+        transaction.commit();
+    }
+}, 1000);
+```
+Fragment的生命周期方法执行如下：
+```java
+MyFragment: 0 fragment onAttach:
+MyFragment: 0 fragment onCreate:
+MyFragment: 0 fragment onCreateView:
+MyFragment: 0 fragment onViewCreated:
+MyFragment: 0 fragment onStart:
+MyFragment: 0 fragment onResume:
+MyFragment: 0 fragment onPause:
+MyFragment: 0 fragment onStop:
+MyFragment: 0 fragment onDestroyView:
+```
+
+可以看到，由于限制了Fragment的状态为CREATED，因此会从RESUMED状态降级，依次执行`onPause()`->`onStop()`->`onDestroyView()`。
+
+*   **参数传入 Lifecycle.State.STARTED**
+
+**Lifecycle.State.STARTED** 对应 Fragment 的 **STARTED** 状态，如果当前 Fragment 状态低于 **STARTED**，那么 Fragment 的状态会变为 **STARTED**，以当前 Fragment 状态为 **CREATED** 为例，接下来会依次执行`onCreateView()`、`onActivityCreate()`和`onStart()`方法；如果当前 Fragment 状态高于 **STARTED**，也就是 **RESUMED**，那么 Fragment 的状态会被强制降为 **STARTED**，接下来会执行`onPause()`方法。如果当前 Fragment 的状态恰好为 **STARTED**，那么就什么都不做。
+
+接下来以实例来说明：
+
+```java
+transaction = getSupportFragmentManager().beginTransaction();
+fragment = MyFragment.newInstance(0);
+transaction.add(fragment, "fragment");
+transaction.setMaxLifecycle(fragment, Lifecycle.State.STARTED);
+transaction.commit();
+```
+Fragment的生命周期方法执行如下：
+```java
+MyFragment: 0 fragment onAttach:
+MyFragment: 0 fragment onCreate:
+```
+可以看出，由于传入了**Lifecycle.State.STARTED**，所以Fragment的状态只能到达STARTED，因此不会执行后面的onResume()。接下来是个降级的例子。
+```java
+transaction = getSupportFragmentManager().beginTransaction();
+fragment = MyFragment.newInstance(0);
+transaction.add(fragment, "fragment");
+transaction.commit();
+new Handler().postDelayed(new Runnable() {
+    @Override
+    public void run() {
+        transaction = getSupportFragmentManager().beginTransaction();
+        transaction.setMaxLifecycle(fragment, Lifecycle.State.STARTED);
+        transaction.commit();
+    }
+}, 1000);
+```
+Fragment的生命周期方法执行如下：
+```java
+MyFragment: 0 fragment onAttach:
+MyFragment: 0 fragment onCreate:
+MyFragment: 0 fragment onCreateView:
+MyFragment: 0 fragment onViewCreated:
+MyFragment: 0 fragment onStart:
+MyFragment: 0 fragment onResume:
+MyFragment: 0 fragment onPause:
+
+```
+可以看到，由于限制了Fragment的状态为CREATED，因此会从RESUMED状态降级，并执行`onPause()`。
+
+-   **参数传入 Lifecycle.State.RESUMED**
+
+**Lifecycle.State.RESUMED** 对应 Fragment 的 **RESUMED** 状态，如果当前 Fragment 状态低于 **RESUMED**，那么 Fragment 的状态会变为 **RESUMED**，以当前 Fragment 状态为 **STARTED** 为例，接下来会执行`onResume()`方法。如果当前 Fragment 的状态恰好为 **RESUMED**，那么就什么都不做。
+
+接下来以实例来说明：
+```java
+transaction = getSupportFragmentManager().beginTransaction();
+fragment = MyFragment.newInstance(0);
+transaction.add(fragment, "fragment");
+transaction.setMaxLifecycle(fragment, Lifecycle.State.CREATED);
+transaction.commit();
+new Handler().postDelayed(new Runnable() {
+    @Override
+    public void run() {
+        transaction = getSupportFragmentManager().beginTransaction();
+        transaction.setMaxLifecycle(fragment, Lifecycle.State.RESUMED);
+        transaction.commit();
+    }
+}, 1000);
+```
+Fragment的生命周期方法执行如下：
+```java
+MyFragment: 0 fragment onAttach:
+MyFragment: 0 fragment onCreate:
+MyFragment: 0 fragment onCreateView:
+MyFragment: 0 fragment onViewCreated:
+MyFragment: 0 fragment onStart:
+MyFragment: 0 fragment onResume:
+```
+可以看出，一开始限制了`setMaxLifecycle`的参数为`Lifecycle.State.CREATED`，所以只会执行到onCreate阶段，然后重新传入了**Lifecycle.State.RESUMED**，所以Fragment的状态会从到达RESUMED，并执行后面的`onCreateView()`->`onViewCreated()`->`onStart()`->`onResume()`。
+##### FragmentPagerAdapter
+除了setUserVisibleHint()方法过时之外，原先的FragmentPagerAdapter的构造方法也被标记为过时了。
+```java
+@Deprecated
+public FragmentPagerAdapter(@NonNull FragmentManager fm) {
+    this(fm, BEHAVIOR_SET_USER_VISIBLE_HINT);
+}
+```
+可以发现，只传入FragmentManager参数的构造方法，现在会回调另一个构造方法，该方法需要传入两个参数，除了fm之外，还需要一个behavior的变量值。
+```java
+public FragmentPagerAdapter(@NonNull FragmentManager fm , @Behavior int behavior) {
+    mFragmentManager = fm;
+    mBehavior = behavior;
+}
+```
+而behavior被@Behavior注解，限制了传入的参数如下：
+```java
+@Retention(RetentionPolicy.SOURCE)
+@IntDef({BEHAVIOR_SET_USER_VISIBLE_HINT, BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT})
+private @interface Behavior { }
+
+@Deprecated
+public static final int BEHAVIOR_SET_USER_VISIBLE_HINT = 0;
+public static final int BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT = 1;
+```
+**BEHAVIOR_SET_USER_VISIBLE_HINT**是默认的参数，与setUserVisibleHint结合起来使用，因此也被标记为过时了。因此我们来看一下**BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT**参数。该参数会在`instantiateItem()`和`setPrimaryItem()`中使用。前面我们已经介绍过这两个方法了，现在来看差异点：
+```java
+@NonNull
+@Override
+public Object instantiateItem(@NonNull ViewGroup container, int position) {
+    ...
+
+    if (fragment != mCurrentPrimaryItem) {
+        fragment.setMenuVisibility(false);
+        if (mBehavior == BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT) {
+            mCurTransaction.setMaxLifecycle(fragment, Lifecycle.State.STARTED);
+        } else {
+            fragment.setUserVisibleHint(false);
+        }
+    }
+
+    return fragment;
+}
+```
+`instantiateItem()`方法是用于创建新的视图，如果当前fragment不是选中的对象，则会被隐藏。如果mBehavior不为**BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT**的话，则会调用`setUserVisibleHint(false)`，与原来的实现是一样的。否则，会调用`setMaxLifecycle(fragment, Lifecycle.State.STARTED)`。因此fragment生命周期会走到onStart()，用户可见，但是不能交互。
+```java
+@Override
+public void setPrimaryItem(@NonNull ViewGroup container, int position, @NonNull Object object) {
+    Fragment fragment = (Fragment)object;
+
+    if (fragment != mCurrentPrimaryItem) {
+        if (mCurrentPrimaryItem != null) {
+            mCurrentPrimaryItem.setMenuVisibility(false);
+            if (mBehavior == BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT) {
+                if (mCurTransaction == null) {
+                    mCurTransaction = mFragmentManager.beginTransaction();
+                }
+                mCurTransaction.setMaxLifecycle(mCurrentPrimaryItem, Lifecycle.State.STARTED);
+            } else {
+                mCurrentPrimaryItem.setUserVisibleHint(false);
+            }
+        }
+
+        fragment.setMenuVisibility(true);
+        if (mBehavior == BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT) {
+            if (mCurTransaction == null) {
+                mCurTransaction = mFragmentManager.beginTransaction();
+            }
+            mCurTransaction.setMaxLifecycle(fragment, Lifecycle.State.RESUMED);
+        } else {
+            fragment.setUserVisibleHint(true);
+        }
+
+        mCurrentPrimaryItem = fragment;
+    }
+}
+```
+`setPrimaryItem()`方法是用于选中当前视图。当发生视图切换的时候，首先会将上一个视图隐藏，如果mBehavior为**BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT**的话，则会将调用`mCurTransaction.setMaxLifecycle(mCurrentPrimaryItem, Lifecycle.State.STARTED)`，因此上一个fragment将会从RESUMED状态降级到STARTED，而当前选中fragment则会从STARTED状态升级到RESUMED状态。
+
+
+
+##### 具体方案实现
+
+从上面的分析我们发现，总的来说就是，如果当前页面可见，则会调用`onResume()`，如果当前页面不可见，则会调用`onPause`。
+
+所以，我们为了实现懒加载，可以在初始化FragmentPagerAdapter的时候，behavior传入**BEHAVIOR_RESUME_ONLY_CURRENT_FRAGMENT**，并将请求数据的代码放到`onResume()`中去执行，除此之外，还需要引入一个变量，来标记已经获取过数据了。
+
+当脱离预加载的缓存范围之后，之前的页面会被销毁，会调用到onDestroyView，因此需要重置isFirstLoaded的状态，下一次回到该界面的时候才能正常获取数据。
+```java
+public abstract class LazyFragment extends Fragment {
+    //标记是否已经完成了加载
+    private boolean isFirstLoaded = true;
+
+    @Nullable
+    @Override
+    public View onCreateView(@Nullable LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
+        View view = inflater.inflate(getContentViewId(), container, false);
+        initView(view);
+        return view;
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        //如果视图被销毁了，要重置状态
+        isFirstLoaded = true;
+    }
+
+    @Override
+    public void onResume(){
+      super.onResume();
+      if (isFirstLoad) {
+          loadData();
+          isFirstLoad = false;
+      }
+    }
+
+    abstract int getContentViewId();
+
+    abstract void initView();
+    //真正懒加载实现
+    abstract void loadData();
+
+}
+```
