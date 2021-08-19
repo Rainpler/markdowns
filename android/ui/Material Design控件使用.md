@@ -267,12 +267,13 @@ BottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED)； 我们还�
 ### 模态bottom sheet
 顾名思义，模态的bottom sheet在打开的时候会阻止和主界面的交互，并且在视觉上会在bottom sheet背后加一层半透明的阴影，使得看上去深度（elevation）更深。
 
-CoordinatorLayoutCoordinatorLayout(协调者布局)是在 Google IO/15 大会发布的，遵循Material 风格，包含在 support Library中，结合AppbarLayout, CollapsingToolbarLayout等可产生各种炫酷的效果。
+## CoordinatorLayout
+CoordinatorLayout(协调者布局)是在 Google IO/15 大会发布的，遵循Material 风格，包含在 support Library中，结合AppbarLayout, CollapsingToolbarLayout等可产生各种炫酷的效果。
 
 CoordinatorLayout是用来协调其子view并以触摸影响布局的形式产生动画效果的一个super-powered FrameLayout，其典型的子View包括：FloatingActionButton，SnackBar。
 注意：CoordinatorLayout是一个顶级父View
 
-## AppBarLayout
+### AppBarLayout
 AppBarLayout是LinearLayout的子类，必须在它的子view上设置`app:layout_scrollFlags`属性或者是在代码中调用setScrollFlags()设置这个属性。
 
 AppBarLayout的子布局有5种滚动标识：
@@ -281,7 +282,8 @@ AppBarLayout的子布局有5种滚动标识：
 - enterAlwaysCollapsed：假设你定义了一个最小高度（minHeight）同时enterAlways也定义了，那么view将在到达这个最小高度的时候开始显示，并且从这个时候开始慢慢展开，当滚动到顶部的时候展开完。
 - exitUntilCollapsed：当你定义了一个minHeight，此布局将在滚动到达这个最小高度的时候折叠。
 - snap：当一个滚动事件结束，如果视图是部分可见的，那么它将被滚动到收缩或展开。例如，如果视图只有底部25%显示，它将折叠。相反，如果它的底部75%可见，那么它将完全展开。
-##CollapsingToolbarLayout
+
+### CollapsingToolbarLayout
 CollapsingToolbarLayout作用是提供了一个可以折叠的Toolbar，它继承自FrameLayout，给它设置layout_scrollFlags，它可以控制包含在CollapsingToolbarLayout中的控件(如：ImageView、Toolbar)在响应layout_behavior事件时作出相应的scrollFlags滚动事件(移除屏幕或固定在屏幕顶端)。
 
 CollapsingToolbarLayout可以通过app:contentScrim设置折叠时工具栏布局的颜色，通过app:statusBarScrim设置折叠时状态栏的颜色。默认contentScrim是colorPrimary的色值，statusBarScrim是colorPrimaryDark的色值。
@@ -292,13 +294,13 @@ CollapsingToolbarLayout的子布局有3种折叠模式（Toolbar中设置的app:
 - parallax：CollapsingToolbarLayout折叠时，此布局也会有视差折叠效果。
 
 >当CollapsingToolbarLayout的子布局设置了parallax模式时，我们还可以通过  app:layout_collapseParallaxMultiplier设置视差滚动因子，值为：0~1。
-## NestedScrollView
+### NestedScrollView
 在新版的support-v4兼容包里面有一个NestedScrollView控件，这个控件其实和普通的ScrollView并没有多大的区别，这个控件其实是Meterial Design中设计的一个控件，目的是跟MD中的其他控件兼容。应该说在MD中，RecyclerView代替了ListView，而NestedScrollView代替了ScrollView，他们两个都可以用来跟ToolBar交互，实现上拉下滑中ToolBar的变化。
 
 在NestedScrollView的名字中其实就可以看出他的作用了，Nested是嵌套的意思，而ToolBar基本需要嵌套使用。
-## FloatingActionButton
+### FloatingActionButton
 FloatingActionButton就是一个漂亮的按钮，其本质是一个ImageVeiw。有一点要注意，Meterial Design引入了Z轴的概念，就是所有的view都有了高度，他们一层一层贴在手机屏幕上，而FloatingActionButton的Z轴高度最高，它贴在所有view的最上面，没有view能覆盖它。
-## Behavior(注意暂时了解概念就行)
+### Behavior(注意暂时了解概念就行)
 >Interaction behavior plugin for child views of CoordinatorLayout. A Behavior implements one or more interactions that a user can take on a child view. These interactions may include drags, swipes, flings, or any other gestures.
 
 CoordinatorLayout中子View的交互行为，可以在CoordinatorLayout的子类中实现一个或多个交互，这些交互可能是拖动，滑动，闪动或任何其他手势。其实就是实现CoordinatorLayout内部控件的交互行为，可以在非侵入的方式实现相应的交互。
@@ -307,13 +309,12 @@ Behavior只有是CoordinatorLayout的直接子View才有意义。只要将Behavi
 CoordinatorLayout的直接子元素上，就能对触摸事件（touch events）、window insets、measurement、layout以及嵌套滚动（nested scrolling）等动作进行拦截。Design Library的大多功能都是借助Behavior的大量运用来实现的。当然，Behavior无法独立完成工作，必须与实际调用的CoordinatorLayout子视图相绑定。具体有三种方式：通过代码绑定、在XML中绑定或者通过注释实现自动绑定。上面NestedScrollView中`app:layout_behavior=”@string/appbar_scrolling_view_behavior”`的Behavior是系统默认的，我们也可以根据自己的需求来自定义Behavior。
 
 **Behavior里面回调的说明**
->behavior的嵌套滚动都是依照一个相应的参考物，所以在自定义的时候一定要区分哪个是照的View哪个是被观察的View，只有区分了这些才能更好的理解下面的内容，下面出现的所
-有child都是被观察的View，也就是xml中定义behavior的View
+>behavior的嵌套滚动都是依照一个相应的参考物，所以在自定义的时候一定要区分哪个是照的View哪个是被观察的View，只有区分了这些才能更好的理解下面的内容，下面出现的所有child都是被观察的View，也就是xml中定义behavior的View。
 - `layoutDependsOn(CoordinatorLayout parent, View child, View dependency) `表示是否给应用了Behavior 的View 指定一个依赖的布局
   - 参数1：coordinatorlayout对象
   - 参数2：child 被观察的View
   - 参数3：依赖变化的View（被观察的View）
-- onDependentViewChanged(CoordinatorLayout parent, View child, View dependency)
+- `onDependentViewChanged(CoordinatorLayout parent, View child, View dependency)`
 当依赖的View发生变化的时候hi掉的方法
 - `onStartNestedScroll(@NonNull CoordinatorLayout coordinatorLayout, @NonNull
 View child, @NonNull View directTargetChild, @NonNull View target, int axes, int
@@ -651,115 +652,115 @@ public class NestedScrollingChildHelper {
                       child = (View) p;
                   }
                   p = p.getParent();
-         }
-      }
-      return false;
-  }
+           }
+        }
+        return false;
+    }
 
-  public void stopNestedScroll() {
-      stopNestedScroll(TYPE_TOUCH);
-  }
+    public void stopNestedScroll() {
+        stopNestedScroll(TYPE_TOUCH);
+    }
 
-  public void stopNestedScroll(@NestedScrollType int type) {
-      ViewParent parent = getNestedScrollingParentForType(type);
-      if (parent != null) {
-        // 这里面就会调用ViewParent的onStopNestedScroll(target, type)方法
-          ViewParentCompat.onStopNestedScroll(parent, mView, type);
-    // 该次滑动结束 将给mNestedScrollingParentTouch置空
-          setNestedScrollingParentForType(type, null);
-      }
-  }
+    public void stopNestedScroll(@NestedScrollType int type) {
+        ViewParent parent = getNestedScrollingParentForType(type);
+        if (parent != null) {
+          // 这里面就会调用ViewParent的onStopNestedScroll(target, type)方法
+            ViewParentCompat.onStopNestedScroll(parent, mView, type);
+      // 该次滑动结束 将给mNestedScrollingParentTouch置空
+            setNestedScrollingParentForType(type, null);
+        }
+    }
 
 
-  public boolean dispatchNestedScroll(int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed, @Nullable int[] offsetInWindow)
-  {
-      return dispatchNestedScrollInternal(dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, offsetInWindow, TYPE_TOUCH, null);
-  }
+    public boolean dispatchNestedScroll(int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed, @Nullable int[] offsetInWindow)
+    {
+        return dispatchNestedScrollInternal(dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, offsetInWindow, TYPE_TOUCH, null);
+    }
 
-  public boolean dispatchNestedScroll(int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed, @Nullable int[] offsetInWindow, @NestedScrollType int type) {
-      return dispatchNestedScrollInternal(dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, offsetInWindow, type, null);
-  }
+    public boolean dispatchNestedScroll(int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed, @Nullable int[] offsetInWindow, @NestedScrollType int type) {
+        return dispatchNestedScrollInternal(dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, offsetInWindow, type, null);
+    }
 
-  public void dispatchNestedScroll(int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed, @Nullable int[] offsetInWindow, @NestedScrollType int type, @Nullable int[] consumed) {
-      dispatchNestedScrollInternal(dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, offsetInWindow, type, consumed);
-  }
+    public void dispatchNestedScroll(int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed, @Nullable int[] offsetInWindow, @NestedScrollType int type, @Nullable int[] consumed) {
+        dispatchNestedScrollInternal(dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, offsetInWindow, type, consumed);
+    }
 
-  private boolean dispatchNestedScrollInternal(int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed, @Nullable int[] offsetInWindow, @NestedScrollType int type, @Nullable int[] consumed) {
-      if (isNestedScrollingEnabled()) {
-    // 在startNestedScroll()中进行了赋值操作，所以这里可以直接获取ViewParent了
-          final ViewParent parent = getNestedScrollingParentForType(type);
-          if (parent == null) {
-              return false;
-          }
-          // 判断是否是有效的嵌套滑动
-
-          if (dxConsumed != 0 || dyConsumed != 0 || dxUnconsumed != 0 || dyUnconsumed != 0) {
-              int startX = 0;
-              int startY = 0;
-              if (offsetInWindow != null) {
-                  mView.getLocationInWindow(offsetInWindow);
-                  startX = offsetInWindow[0];
-                  startY = offsetInWindow[1];
-              }
-              if (consumed == null) {
-                  consumed = getTempNestedScrollConsumed();
-                  consumed[0] = 0;
-                  consumed[1] = 0;
-              }
-              // 这里就会调用ViewParent的onNestedScroll()方法
-              ViewParentCompat.onNestedScroll(parent, mView, dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, type, consumed);
-              if (offsetInWindow != null) {
-                  mView.getLocationInWindow(offsetInWindow);
-                  offsetInWindow[0] -= startX;
-                  offsetInWindow[1] -= startY;
-              }
-              return true;
-        } else if (offsetInWindow != null) {
-              offsetInWindow[0] = 0;
-              offsetInWindow[1] = 0;
-          }
-      }
-      return false;
-  }
-
-  public boolean dispatchNestedPreScroll(int dx, int dy, @Nullable int[] consumed, @Nullable int[] offsetInWindow) {
-      return dispatchNestedPreScroll(dx, dy, consumed, offsetInWindow, TYPE_TOUCH);
-  }
-
-  public boolean dispatchNestedPreScroll(int dx, int dy, @Nullable int[] consumed, @Nullable int[] offsetInWindow, @NestedScrollType int type) {
+    private boolean dispatchNestedScrollInternal(int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed, @Nullable int[] offsetInWindow, @NestedScrollType int type, @Nullable int[] consumed) {
         if (isNestedScrollingEnabled()) {
+      // 在startNestedScroll()中进行了赋值操作，所以这里可以直接获取ViewParent了
             final ViewParent parent = getNestedScrollingParentForType(type);
             if (parent == null) {
                 return false;
             }
-            if (dx != 0 || dy != 0) {
+            // 判断是否是有效的嵌套滑动
+
+            if (dxConsumed != 0 || dyConsumed != 0 || dxUnconsumed != 0 || dyUnconsumed != 0) {
                 int startX = 0;
                 int startY = 0;
                 if (offsetInWindow != null) {
-                  mView.getLocationInWindow(offsetInWindow);
-                  startX = offsetInWindow[0];
-                  startY = offsetInWindow[1];
+                    mView.getLocationInWindow(offsetInWindow);
+                    startX = offsetInWindow[0];
+                    startY = offsetInWindow[1];
                 }
                 if (consumed == null) {
-                  consumed = getTempNestedScrollConsumed();
+                    consumed = getTempNestedScrollConsumed();
+                    consumed[0] = 0;
+                    consumed[1] = 0;
                 }
-                consumed[0] = 0;
-                consumed[1] = 0;
-                // 这里会调用ViewParent的onNestedPreScroll()方法 Parent消费的数据会缝在consumed变量中
-                ViewParentCompat.onNestedPreScroll(parent, mView, dx, dy, consumed, type);
+                // 这里就会调用ViewParent的onNestedScroll()方法
+                ViewParentCompat.onNestedScroll(parent, mView, dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed, type, consumed);
                 if (offsetInWindow != null) {
                     mView.getLocationInWindow(offsetInWindow);
                     offsetInWindow[0] -= startX;
                     offsetInWindow[1] -= startY;
                 }
-                return consumed[0] != 0 || consumed[1] != 0;
-            } else if (offsetInWindow != null) {
-              offsetInWindow[0] = 0;
-              offsetInWindow[1] = 0;
+                return true;
+          } else if (offsetInWindow != null) {
+                offsetInWindow[0] = 0;
+                offsetInWindow[1] = 0;
             }
         }
         return false;
     }
+
+    public boolean dispatchNestedPreScroll(int dx, int dy, @Nullable int[] consumed, @Nullable int[] offsetInWindow) {
+        return dispatchNestedPreScroll(dx, dy, consumed, offsetInWindow, TYPE_TOUCH);
+    }
+
+    public boolean dispatchNestedPreScroll(int dx, int dy, @Nullable int[] consumed, @Nullable int[] offsetInWindow, @NestedScrollType int type) {
+          if (isNestedScrollingEnabled()) {
+              final ViewParent parent = getNestedScrollingParentForType(type);
+              if (parent == null) {
+                  return false;
+              }
+              if (dx != 0 || dy != 0) {
+                  int startX = 0;
+                  int startY = 0;
+                  if (offsetInWindow != null) {
+                    mView.getLocationInWindow(offsetInWindow);
+                    startX = offsetInWindow[0];
+                    startY = offsetInWindow[1];
+                  }
+                  if (consumed == null) {
+                    consumed = getTempNestedScrollConsumed();
+                  }
+                  consumed[0] = 0;
+                  consumed[1] = 0;
+                  // 这里会调用ViewParent的onNestedPreScroll()方法 Parent消费的数据会缝在consumed变量中
+                  ViewParentCompat.onNestedPreScroll(parent, mView, dx, dy, consumed, type);
+                  if (offsetInWindow != null) {
+                      mView.getLocationInWindow(offsetInWindow);
+                      offsetInWindow[0] -= startX;
+                      offsetInWindow[1] -= startY;
+                  }
+                  return consumed[0] != 0 || consumed[1] != 0;
+              } else if (offsetInWindow != null) {
+                offsetInWindow[0] = 0;
+                offsetInWindow[1] = 0;
+              }
+          }
+          return false;
+      }
 
     public boolean dispatchNestedFling(float velocityX, float velocityY, boolean consumed) {
         if (isNestedScrollingEnabled()) {
