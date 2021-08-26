@@ -360,6 +360,242 @@ private boolean performIntercept(MotionEvent ev, final int type) {
     return intercepted;
 }
 ```
-该方法首先会获取View集合topmostChildList，然后通过getTopSortedChildren()方法对该集合按Z轴进行排序。接下来会遍历所有子view，首次进入时，intercepted和newBlock均为false。因此我们直接看下一个if，然后会调用Behavior的onInterceptTouchEvent方法判断是否拦截事件，如果拦截事件，则事件又会交给CoordinatorLayout的onTouchEvent方法处理。一般情况下，Behavior的onInterceptTouchEvent方法基本都是返回false。
+该方法首先会获取View集合topmostChildList，然后通过`getTopSortedChildren()`方法对该集合按Z轴进行排序。接下来会遍历所有子view，首次进入时，intercepted和newBlock均为false。因此我们直接看下一个if，然后会调用Behavior的`onInterceptTouchEvent()`方法判断是否拦截事件，如果拦截事件，则事件又会交给CoordinatorLayout的`onTouchEvent()`方法处理。一般情况下，Behavior的`onInterceptTouchEvent()`方法基本都是返回false。
 
-如果所有子view的onInterceptTouchEvent()方法都返回false，那么说明CoordinatorLayout不会拦截事件，根据事件分发机制，
+如果所有子view的`onInterceptTouchEvent()`方法都返回false，那么说明CoordinatorLayout不会拦截事件，根据事件分发机制，事件将会分发到子View中去处理。如果子View实现了NestedScrollingChild接口，就会调用嵌套滑动的相关API。
+
+如RecyclerView，当事件分发到RecyclerView的时候，在`onInterceptTouchEvent()`中处理MotionEvent.ACTION_DOWN的时候就会调用`startNestedScroll()`，然后又会通过NestedScrollingChildHelper类代理具体的实现，寻找到实现了NestedScrollingParent2接口的父类，调用父类的`startNestedScroll()`，也就是我们的CoordinatorLayout。
+##### onStartNestedScroll
+```java
+public boolean onStartNestedScroll(View child, View target, int axes, int type) {
+    boolean handled = false;
+
+    final int childCount = getChildCount();
+    for (int i = 0; i < childCount; i++) {
+        final View view = getChildAt(i);
+        if (view.getVisibility() == View.GONE) {
+            // If it's GONE, don't dispatch
+            continue;
+        }
+        final LayoutParams lp = (LayoutParams) view.getLayoutParams();
+        final Behavior viewBehavior = lp.getBehavior();
+        if (viewBehavior != null) {
+            //判断Behavior是否接受嵌套滑动事件
+            final boolean accepted = viewBehavior.onStartNestedScroll(this, view, child,
+                    target, axes, type);
+            handled |= accepted;
+            //设置当前子控件接受接受嵌套滑动
+            lp.setNestedScrollAccepted(type, accepted);
+        } else {
+            lp.setNestedScrollAccepted(type, false);
+        }
+    }
+    return handled;
+}
+```
+在这个方法中，会遍历其所有子View，然后拿到子View所对应的Behavior，并调用对应的``onStartNestedScroll()``。如果当前Behavior接受嵌套滑动事件，则调用`lp.setNestedScrollAccepted(type, accepted)`，设置当前子控件接受嵌套滑动事件，后续嵌套事件的分发都依赖于这个状态的设置。
+
+关于嵌套滑动的流程，可以详见下面的流程图。
+
+![](../../res/嵌套滑动.jpg)
+
+##### onNestedScrollAccepted
+当`onStartNestedScroll()`返回了true之后，则会调用父类的`onNestedScrollAccepted()`方法，通过遍历子控件，获取到LayoutParams参数，然后判断`isNestedScrollAccepted()`是否为true，这就是在`onStartNestedScroll()`方法中设置过的，否则直接跳过。最后拿到Behavior对象，调用它的`onNestedScrollAccepted()`方法。
+```java
+public void onNestedScrollAccepted(View child, View target, int nestedScrollAxes, int type) {
+    mNestedScrollingParentHelper.onNestedScrollAccepted(child, target, nestedScrollAxes, type);
+    mNestedScrollingTarget = target;
+
+    final int childCount = getChildCount();
+    for (int i = 0; i < childCount; i++) {
+        final View view = getChildAt(i);
+        final LayoutParams lp = (LayoutParams) view.getLayoutParams();
+        if (!lp.isNestedScrollAccepted(type)) {
+            continue;
+        }
+
+        final Behavior viewBehavior = lp.getBehavior();
+        if (viewBehavior != null) {
+            viewBehavior.onNestedScrollAccepted(this, view, child, target,
+                    nestedScrollAxes, type);
+        }
+    }
+}
+```
+##### onNestedPreScroll
+接下来的流程中，当子控件开始滑动，产生ACTION_MOVE事件，最终会将事件分发到父控件的`onNestedPreScroll()`方法。同样，在每次遍历的时候，都会先校验`lp.isNestedScrollAccepted()`，这就是我们前面说的所有嵌套事件的分发都依赖于这个状态的设置。
+```java
+@Override
+public void onNestedPreScroll(View target, int dx, int dy, int[] consumed, int  type) {
+    int xConsumed = 0;
+    int yConsumed = 0;
+    boolean accepted = false;
+
+    final int childCount = getChildCount();
+    for (int i = 0; i < childCount; i++) {
+        final View view = getChildAt(i);
+        if (view.getVisibility() == GONE) {
+            // If the child is GONE, skip...
+            continue;
+        }
+
+        final LayoutParams lp = (LayoutParams) view.getLayoutParams();
+        if (!lp.isNestedScrollAccepted(type)) {
+            continue;
+        }
+
+        final Behavior viewBehavior = lp.getBehavior();
+        if (viewBehavior != null) {
+            mBehaviorConsumed[0] = 0;
+            mBehaviorConsumed[1] = 0;
+            viewBehavior.onNestedPreScroll(this, view, target, dx, dy, mBehaviorConsumed, type);
+
+            xConsumed = dx > 0 ? Math.max(xConsumed, mBehaviorConsumed[0])
+                    : Math.min(xConsumed, mBehaviorConsumed[0]);
+            yConsumed = dy > 0 ? Math.max(yConsumed, mBehaviorConsumed[1])
+                    : Math.min(yConsumed, mBehaviorConsumed[1]);
+
+            accepted = true;
+        }
+    }
+
+    consumed[0] = xConsumed;
+    consumed[1] = yConsumed;
+
+    if (accepted) {
+        onChildViewsChanged(EVENT_NESTED_SCROLL);
+    }
+}
+```
+同样的在该方法中，也是调用子控件的Behavior对应的`onNestedPreScroll()`方法，并消耗一定的距离，最后调用了onChildViewsChanged(EVENT_NESTED_SCROLL)。该方法与其他方法的最大的不同就是，用int[] mBehaviorConsumed = new int[2]记录了控件在X轴与Y轴的距离，获取并比较内部子控件中最大的消耗距离后，最后将最大的消耗距离，通过int[]consumed数组在传回NestedScrollingChild。
+
+##### onNestedScroll
+当预滑动没有消费完所有的dx、dy值，则会进一步调用`onNestedScroll()`。这里的处理跟`onNestedPreScroll()`几乎是一致的。
+```java
+@Override
+public void onNestedScroll(@NonNull View target, int dxConsumed, int dyConsumed,
+        int dxUnconsumed, int dyUnconsumed, @ViewCompat.NestedScrollType int type,
+        @NonNull int[] consumed) {
+    final int childCount = getChildCount();
+    boolean accepted = false;
+    int xConsumed = 0;
+    int yConsumed = 0;
+
+    for (int i = 0; i < childCount; i++) {
+        final View view = getChildAt(i);
+        if (view.getVisibility() == GONE) {
+            // If the child is GONE, skip...
+            continue;
+        }
+
+        final LayoutParams lp = (LayoutParams) view.getLayoutParams();
+        if (!lp.isNestedScrollAccepted(type)) {
+            continue;
+        }
+
+        final Behavior viewBehavior = lp.getBehavior();
+        if (viewBehavior != null) {
+
+            mBehaviorConsumed[0] = 0;
+            mBehaviorConsumed[1] = 0;
+
+            viewBehavior.onNestedScroll(this, view, target, dxConsumed, dyConsumed,
+                    dxUnconsumed, dyUnconsumed, type, mBehaviorConsumed);
+
+            xConsumed = dxUnconsumed > 0 ? Math.max(xConsumed, mBehaviorConsumed[0])
+                    : Math.min(xConsumed, mBehaviorConsumed[0]);
+            yConsumed = dyUnconsumed > 0 ? Math.max(yConsumed, mBehaviorConsumed[1])
+                    : Math.min(yConsumed, mBehaviorConsumed[1]);
+
+            accepted = true;
+        }
+    }
+
+    consumed[0] += xConsumed;
+    consumed[1] += yConsumed;
+
+    if (accepted) {
+        onChildViewsChanged(EVENT_NESTED_SCROLL);
+    }
+}
+```
+余下的onNestedPreFling与onNestedFling方法都大同小异，都是先校验isNestedScrollAccepted状态，然后调用Behavior的对应方法，最后调用onChildViewsChanged()方法。
+
+#### Behavior的测量与布局
+在View的绘制流程中，离不开onMeasure、onLayout、onDraw三个重要的方法，而Behavior中实现了onMeasureChild()和onLayoutChild()两个方法，这两个方法的调用又是在CoordinatorLayout的onMeasure和onLayout阶段进行的。接下来我们来看一下它是怎么将测量布局工作交给Behavior来进行的。
+##### onMeasure
+```java
+@Override
+protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+    //省略部分代码...
+    final int childCount = mDependencySortedChildren.size();
+    for (int i = 0; i < childCount; i++) {
+        final View child = mDependencySortedChildren.get(i);
+        if (child.getVisibility() == GONE) {
+            // If the child is GONE, skip...
+            continue;
+        }
+
+        final LayoutParams lp = (LayoutParams) child.getLayoutParams();
+
+        int keylineWidthUsed = 0;
+
+
+        int childWidthMeasureSpec = widthMeasureSpec;
+        int childHeightMeasureSpec = heightMeasureSpec;
+
+
+        final Behavior b = lp.getBehavior();
+        //交给Behavior去测量
+        if (b == null || !b.onMeasureChild(this, child, childWidthMeasureSpec, keylineWidthUsed,
+                childHeightMeasureSpec, 0)) {
+            onMeasureChild(child, childWidthMeasureSpec, keylineWidthUsed,
+                    childHeightMeasureSpec, 0);
+        }
+
+        widthUsed = Math.max(widthUsed, widthPadding + child.getMeasuredWidth() +
+                lp.leftMargin + lp.rightMargin);
+
+        heightUsed = Math.max(heightUsed, heightPadding + child.getMeasuredHeight() +
+                lp.topMargin + lp.bottomMargin);
+        childState = View.combineMeasuredStates(childState, child.getMeasuredState());
+    }
+
+    final int width = View.resolveSizeAndState(widthUsed, widthMeasureSpec,
+            childState & View.MEASURED_STATE_MASK);
+    final int height = View.resolveSizeAndState(heightUsed, heightMeasureSpec,
+            childState << View.MEASURED_HEIGHT_STATE_SHIFT);
+    setMeasuredDimension(width, height);
+}
+```
+观察上述代码，我们发现该方法对子控件进行遍历，并调那个用子控件的Behavior的onMeasureChild方法，判断是否自主测量，如果为true，那么则以子控件的测量为准。当子控件测量完毕后。会通过widthUsed 和 heightUsed 这两个变量来保存CoordinatorLayout中子控件最大的尺寸。这两个变量的值，最终将会影响CoordinatorLayout的宽高。
+
+##### onLayout
+```java
+@Override
+protected void onLayout(boolean changed, int l, int t, int r, int b) {
+    final int layoutDirection = ViewCompat.getLayoutDirection(this);
+    final int childCount = mDependencySortedChildren.size();
+    for (int i = 0; i < childCount; i++) {
+        final View child = mDependencySortedChildren.get(i);
+        if (child.getVisibility() == GONE) {
+            // If the child is GONE, skip...
+            continue;
+        }
+
+        final LayoutParams lp = (LayoutParams) child.getLayoutParams();
+        final Behavior behavior = lp.getBehavior();
+
+        if (behavior == null || !behavior.onLayoutChild(this, child, layoutDirection)) {
+            onLayoutChild(child, layoutDirection);
+        }
+    }
+}
+```
+在onLayout方法中，通过遍历子View获取到Behavior，如果对象为空，或者Behavior的onLayoutChild()返回了false，则调用自己的onLayoutChild()方法进行测量。否则则以behavior的测量结果为准。
+
+那么什么样的情况下，我们需要设置自主布局呢?CoordinatorLayout布局方式是类似于FrameLayout的。在FrameLayout的布局中是只支持Gravity来设置布局的。如果我们需要自主的摆放控件中的位置，那么我们就需要重写Behavior的onLayoutChild方法。并设置该方法返回结果为true。
+
+### 总结
+
+关于CoordinatorLayout的知识点很多，需要理解透彻不是一件容易的事情。但是通过学习Coordinatorlayout，对我们理解事件分发机制，嵌套滑动的机制等都有很大的帮助。

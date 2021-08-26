@@ -390,6 +390,81 @@ public boolean dispatchTouchEvent(MotionEvent ev) {
 首先当次事件未cancel且未被拦截，然后必须是ACTION_DOWN或ACTION_POINTER_DOWN，即新的事件序列或子序列的开始，才会进行派发事件查找。
 
 在查找过程中，会逆序遍历子view，先找到命中范围的child。若该child对应的TouchTarget已经在mFirstTouchTarget链表中，则意味着之前已经有触摸点落于该child且消费了事件，那么只需要给其添加触摸点ID，然后结束子view遍历；若没有找到对应的TouchTarget，说明对于该child是新的事件，那么通过dispatchTransformedTouchEvent方法，对其进行派发，若child消费事件，则创建TouchTarget添加至mFirstTouchTarget链表，并标记已经派发过事件。
+```java
+private boolean dispatchTransformedTouchEvent(MotionEvent event, boolean cancel,
+            View child, int desiredPointerIdBits) {
+        final boolean handled;
+
+        //  检测是否需要发送ACTION_CANCEL。
+        //  如果cancel为true 或者 action是ACTION_CANCEL;
+        //  则设置消息为ACTION_CANCEL，并将ACTION_CANCEL消息分发给对应的对象，并返回。
+        // (01) 如果child是空，则将ACTION_CANCEL消息分发给当前ViewGroup；
+        //      只不过会将ViewGroup看作它的父类View，调用View的dispatchTouchEvent()接口。
+        // (02) 如果child不是空，调用child的dispatchTouchEvent()。
+        final int oldAction = event.getAction();
+        if (cancel || oldAction == MotionEvent.ACTION_CANCEL) {
+            event.setAction(MotionEvent.ACTION_CANCEL);
+            if (child == null) {
+                handled = super.dispatchTouchEvent(event);
+            } else {
+                handled = child.dispatchTouchEvent(event);
+            }
+            event.setAction(oldAction);
+            return handled;
+        }
+
+        // 获取新旧的触摸点数目
+        final int oldPointerIdBits = event.getPointerIdBits();
+        final int newPointerIdBits = oldPointerIdBits & desiredPointerIdBits;
+
+
+        if (newPointerIdBits == 0) {
+            return false;
+        }
+
+        // 如果触摸点一致
+        final MotionEvent transformedEvent;
+        if (newPointerIdBits == oldPointerIdBits) {
+            if (child == null || child.hasIdentityMatrix()) {
+                if (child == null) {
+                    handled = super.dispatchTouchEvent(event);
+                } else {
+                    //转换相对坐标系为View为起始的坐标系
+                    final float offsetX = mScrollX - child.mLeft;
+                    final float offsetY = mScrollY - child.mTop;
+                    event.offsetLocation(offsetX, offsetY);
+
+                    handled = child.dispatchTouchEvent(event);
+
+                    event.offsetLocation(-offsetX, -offsetY);
+                }
+                return handled;
+            }
+            transformedEvent = MotionEvent.obtain(event);
+        } else {
+            // 如果触摸点不一致，则意味着我们需要对事件进行拆分
+            transformedEvent = event.split(newPointerIdBits);
+        }
+
+        //对转化的transformedEvent分发
+        if (child == null) {
+            handled = super.dispatchTouchEvent(transformedEvent);
+        } else {
+            final float offsetX = mScrollX - child.mLeft;
+            final float offsetY = mScrollY - child.mTop;
+            transformedEvent.offsetLocation(offsetX, offsetY);
+            if (! child.hasIdentityMatrix()) {
+                transformedEvent.transform(child.getInverseMatrix());
+            }
+
+            handled = child.dispatchTouchEvent(transformedEvent);
+        }
+
+        // Done.
+        transformedEvent.recycle();
+        return handled;
+    }
+```
 
 **注意：这里先前存在TouchTarget的情况下不执行dispatchTransformedTouchEvent，是因为需要对当次事件进行事件拆分，对ACTION_POINTER_DOWN类型进行转化，所以留到后面执行派发阶段，再统一处理。**
 
