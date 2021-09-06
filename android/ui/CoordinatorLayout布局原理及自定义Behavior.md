@@ -596,6 +596,13 @@ protected void onLayout(boolean changed, int l, int t, int r, int b) {
 
 那么什么样的情况下，我们需要设置自主布局呢?CoordinatorLayout布局方式是类似于FrameLayout的。在FrameLayout的布局中是只支持Gravity来设置布局的。如果我们需要自主的摆放控件中的位置，那么我们就需要重写Behavior的onLayoutChild方法。并设置该方法返回结果为true。
 
+
+### 自定义Behavior
+我们使用自定义Behavior的时候，通常有两种自定义方式，一种是基于layoutDependsOn()和onDependentViewChanged()方法实现View与View之间的交互依赖。另一种则是基于NestedScroll的相关接口实现嵌套的滑动。
+##### 交互依赖的例子
+
+##### 嵌套滑动的例子
+
 ### 总结
 
-关于CoordinatorLayout的知识点很多，需要理解透彻不是一件容易的事情。但是通过学习Coordinatorlayout，对我们理解事件分发机制，嵌套滑动的机制等都有很大的帮助。
+关于CoordinatorLayout的知识点很多，需要理解透彻不是一件容易的事情。但是通过学习Coordinatorlayout，对我们理解事件分发机制，嵌套滑动的机制，对Behavior的学习和使用等都有很大的帮助。
