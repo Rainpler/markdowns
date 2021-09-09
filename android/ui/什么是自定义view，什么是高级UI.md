@@ -154,85 +154,154 @@ MeasureSpec是View中的内部类，代表一个32位的int值，高2位代表Sp
 对于DecorView，其MeasureSpec由窗口尺寸和其自身的MeasureSpec来共同决定；对于普通View，其MeasureSpec由父容器的MeasureSpec和自身的LayoutParams来共同决定，MeasureSpec一旦确定后，onMeasure中就可以确定View的测量宽/高。
 
 因为自身的MeasureSpec mode与子view的LayoutParam mode都有3种，确定子View的MeasureSpec组合起来便有9种。具体可见getChildMeasureSpec方法。
+```java
+public static int getChildMeasureSpec(int spec, int padding, int childDimension) {
+        int specMode = MeasureSpec.getMode(spec);
+        int specSize = MeasureSpec.getSize(spec);
 
+        int size = Math.max(0, specSize - padding);
+
+        int resultSize = 0;
+        int resultMode = 0;
+
+        switch (specMode) {
+        // Parent has imposed an exact size on us
+        case MeasureSpec.EXACTLY:
+            if (childDimension >= 0) {
+                resultSize = childDimension;
+                resultMode = MeasureSpec.EXACTLY;
+            } else if (childDimension == LayoutParams.MATCH_PARENT) {
+                // Child wants to be our size. So be it.
+                resultSize = size;
+                resultMode = MeasureSpec.EXACTLY;
+            } else if (childDimension == LayoutParams.WRAP_CONTENT) {
+                // Child wants to determine its own size. It can't be
+                // bigger than us.
+                resultSize = size;
+                resultMode = MeasureSpec.AT_MOST;
+            }
+            break;
+
+        // Parent has imposed a maximum size on us
+        case MeasureSpec.AT_MOST:
+            if (childDimension >= 0) {
+                // Child wants a specific size... so be it
+                resultSize = childDimension;
+                resultMode = MeasureSpec.EXACTLY;
+            } else if (childDimension == LayoutParams.MATCH_PARENT) {
+                // Child wants to be our size, but our size is not fixed.
+                // Constrain child to not be bigger than us.
+                resultSize = size;
+                resultMode = MeasureSpec.AT_MOST;
+            } else if (childDimension == LayoutParams.WRAP_CONTENT) {
+                // Child wants to determine its own size. It can't be
+                // bigger than us.
+                resultSize = size;
+                resultMode = MeasureSpec.AT_MOST;
+            }
+            break;
+
+        // Parent asked to see how big we want to be
+        case MeasureSpec.UNSPECIFIED:
+            if (childDimension >= 0) {
+                // Child wants a specific size... let him have it
+                resultSize = childDimension;
+                resultMode = MeasureSpec.EXACTLY;
+            } else if (childDimension == LayoutParams.MATCH_PARENT) {
+                // Child wants to be our size... find out how big it should
+                // be
+                resultSize = View.sUseZeroUnspecifiedMeasureSpec ? 0 : size;
+                resultMode = MeasureSpec.UNSPECIFIED;
+            } else if (childDimension == LayoutParams.WRAP_CONTENT) {
+                // Child wants to determine its own size.... find out how
+                // big it should be
+                resultSize = View.sUseZeroUnspecifiedMeasureSpec ? 0 : size;
+                resultMode = MeasureSpec.UNSPECIFIED;
+            }
+            break;
+        }
+        //noinspection ResourceType
+        return MeasureSpec.makeMeasureSpec(resultSize, resultMode);
+    }
+```
 于是，整个测量流程如下：
 ```java
 //度量
-    @Override
-    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        clearMeasureParams();//内存 抖动
-        //先度量孩子
-        int childCount = getChildCount();
-        int paddingLeft = getPaddingLeft();
-        int paddingRight = getPaddingRight();
-        int paddingTop = getPaddingTop();
-        int paddingBottom = getPaddingBottom();
+@Override
+protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+    clearMeasureParams();//内存 抖动
+    //先度量孩子
+    int childCount = getChildCount();
+    int paddingLeft = getPaddingLeft();
+    int paddingRight = getPaddingRight();
+    int paddingTop = getPaddingTop();
+    int paddingBottom = getPaddingBottom();
 
-        int selfWidth = MeasureSpec.getSize(widthMeasureSpec);  //ViewGroup解析的父亲给我的宽度
-        int selfHeight = MeasureSpec.getSize(heightMeasureSpec); // ViewGroup解析的父亲给我的高度
+    int selfWidth = MeasureSpec.getSize(widthMeasureSpec);  //ViewGroup解析的父亲给我的宽度
+    int selfHeight = MeasureSpec.getSize(heightMeasureSpec); // ViewGroup解析的父亲给我的高度
 
-        List<View> lineViews = new ArrayList<>(); //保存一行中的所有的view
-        int lineWidthUsed = 0; //记录这行已经使用了多宽的size
-        int lineHeight = 0; // 一行的行高
+    List<View> lineViews = new ArrayList<>(); //保存一行中的所有的view
+    int lineWidthUsed = 0; //记录这行已经使用了多宽的size
+    int lineHeight = 0; // 一行的行高
 
-        int parentNeededWidth = 0;  // measure过程中，子View要求的父ViewGroup的宽
-        int parentNeededHeight = 0; // measure过程中，子View要求的父ViewGroup的高
+    int parentNeededWidth = 0;  // measure过程中，子View要求的父ViewGroup的宽
+    int parentNeededHeight = 0; // measure过程中，子View要求的父ViewGroup的高
 
-        for (int i = 0; i < childCount; i++) {
-            View childView = getChildAt(i);
+    for (int i = 0; i < childCount; i++) {
+        View childView = getChildAt(i);
 
-            LayoutParams childLP = childView.getLayoutParams();
-            if (childView.getVisibility() != View.GONE) {
-                //将layoutParams转变成为 measureSpec
-                int childWidthMeasureSpec = getChildMeasureSpec(widthMeasureSpec, paddingLeft + paddingRight, childLP.width);
-                int childHeightMeasureSpec = getChildMeasureSpec(heightMeasureSpec, paddingTop + paddingBottom, childLP.height);
-                childView.measure(childWidthMeasureSpec, childHeightMeasureSpec);
+        LayoutParams childLP = childView.getLayoutParams();
+        if (childView.getVisibility() != View.GONE) {
+            //将layoutParams转变成为 measureSpec
+            int childWidthMeasureSpec = getChildMeasureSpec(widthMeasureSpec, paddingLeft + paddingRight, childLP.width);
+            int childHeightMeasureSpec = getChildMeasureSpec(heightMeasureSpec, paddingTop + paddingBottom, childLP.height);
+            childView.measure(childWidthMeasureSpec, childHeightMeasureSpec);
 
-                //获取子view的度量宽高
-                int childMesauredWidth = childView.getMeasuredWidth();
-                int childMeasuredHeight = childView.getMeasuredHeight();
+            //获取子view的度量宽高
+            int childMesauredWidth = childView.getMeasuredWidth();
+            int childMeasuredHeight = childView.getMeasuredHeight();
 
-                //如果需要换行
-                if (childMesauredWidth + lineWidthUsed + mHorizontalSpacing > selfWidth) {
+            //如果需要换行
+            if (childMesauredWidth + lineWidthUsed + mHorizontalSpacing > selfWidth) {
 
-                    //一旦换行，我们就可以判断当前行需要的宽和高了，所以此时要记录下来
-                    allLines.add(lineViews);
-                    lineHeights.add(lineHeight);
+                //一旦换行，我们就可以判断当前行需要的宽和高了，所以此时要记录下来
+                allLines.add(lineViews);
+                lineHeights.add(lineHeight);
 
-                    parentNeededHeight = parentNeededHeight + lineHeight + mVerticalSpacing;
-                    parentNeededWidth = Math.max(parentNeededWidth, lineWidthUsed + mHorizontalSpacing);
+                parentNeededHeight = parentNeededHeight + lineHeight + mVerticalSpacing;
+                parentNeededWidth = Math.max(parentNeededWidth, lineWidthUsed + mHorizontalSpacing);
 
-                    lineViews = new ArrayList<>();
-                    lineWidthUsed = 0;
-                    lineHeight = 0;
-                }
-                // view 是分行layout的，所以要记录每一行有哪些view，这样可以方便layout布局
-                lineViews.add(childView);
-                //每行都会有自己的宽和高
-                lineWidthUsed = lineWidthUsed + childMesauredWidth + mHorizontalSpacing;
-                lineHeight = Math.max(lineHeight, childMeasuredHeight);
-
-                //处理最后一行数据
-                if (i == childCount - 1) {
-                    allLines.add(lineViews);
-                    lineHeights.add(lineHeight);
-                    parentNeededHeight = parentNeededHeight + lineHeight + mVerticalSpacing;
-                    parentNeededWidth = Math.max(parentNeededWidth, lineWidthUsed + mHorizontalSpacing);
-                }
-
+                lineViews = new ArrayList<>();
+                lineWidthUsed = 0;
+                lineHeight = 0;
             }
+            // view 是分行layout的，所以要记录每一行有哪些view，这样可以方便layout布局
+            lineViews.add(childView);
+            //每行都会有自己的宽和高
+            lineWidthUsed = lineWidthUsed + childMesauredWidth + mHorizontalSpacing;
+            lineHeight = Math.max(lineHeight, childMeasuredHeight);
+
+            //处理最后一行数据
+            if (i == childCount - 1) {
+                allLines.add(lineViews);
+                lineHeights.add(lineHeight);
+                parentNeededHeight = parentNeededHeight + lineHeight + mVerticalSpacing;
+                parentNeededWidth = Math.max(parentNeededWidth, lineWidthUsed + mHorizontalSpacing);
+            }
+
         }
-
-        //再度量自己,保存
-        //根据子View的度量结果，来重新度量自己ViewGroup
-        // 作为一个ViewGroup，它自己也是一个View,它的大小也需要根据它的父亲给它提供的宽高来度量
-        int widthMode = MeasureSpec.getMode(widthMeasureSpec);
-        int heightMode = MeasureSpec.getMode(heightMeasureSpec);
-
-        int realWidth = (widthMode == MeasureSpec.EXACTLY) ? selfWidth: parentNeededWidth;
-        int realHeight = (heightMode == MeasureSpec.EXACTLY) ?selfHeight: parentNeededHeight;
-        setMeasuredDimension(realWidth, realHeight);
     }
+
+    //再度量自己,保存
+    //根据子View的度量结果，来重新度量自己ViewGroup
+    // 作为一个ViewGroup，它自己也是一个View,它的大小也需要根据它的父亲给它提供的宽高来度量
+    int widthMode = MeasureSpec.getMode(widthMeasureSpec);
+    int heightMode = MeasureSpec.getMode(heightMeasureSpec);
+
+    int realWidth = (widthMode == MeasureSpec.EXACTLY) ? selfWidth: parentNeededWidth;
+    int realHeight = (heightMode == MeasureSpec.EXACTLY) ?selfHeight: parentNeededHeight;
+    setMeasuredDimension(realWidth, realHeight);
+}
 ```
 
 #### onLayout
