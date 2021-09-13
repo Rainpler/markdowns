@@ -50,7 +50,7 @@ public static class FontMetrics {
 ```
 现在我们已经了解了文字绘制的基本知识了，那么我们如何才能灵活的绘制文字的位置呢，比如将文字绘制到View的中心位置。Canvas中的drawText是以baseline作为绘制的基准线的，所以我们这里要先算出baseline的位置才行。
 
-我们想要把文字绘制到中心的话，那就是文字的高度/2的位置(descent-ascent)/2，但由于descent的存在，文字的绘制并不是严格在baseline上，因此还要再减去一个descent的高度。得到baseline的位置为:
+我们想要把文字绘制到中心的话，那就是文字的高度/2的位置+(descent-ascent)/2，但由于descent的存在，文字的绘制并不是严格在baseline上，因此还要再减去一个descent的高度。得到baseline的位置为:
 ```java
 float baseline = getHeight() / 2 - (fontMetrics.descent + fontMetrics.ascent) / 2;
 ```
