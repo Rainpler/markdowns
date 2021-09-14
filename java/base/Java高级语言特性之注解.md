@@ -2,7 +2,7 @@
 ## 注解的定义
 >Java 注解（Annotation）又称 Java 标注，是 JDK1.5 引入的一种注释机制。
 
-注解是元数据的一种形式，提供有关于程序但不属于程序本身的数据。注解对它们注解的代码的操作没有直接影响。  
+注解是元数据的一种形式，提供有关于程序但不属于程序本身的数据。注解对它们注解的代码的操作没有直接影响。
 注解本身没有任何意义，单独的注解就是一种注释，他需要结合其他如反射、插桩等技术才有意义。
 
 ## 如何定义一个注解
@@ -70,9 +70,9 @@ public class com/example/anatationtest/MainActivity extends androidx/appcompat/a
 ### APT技术
 >APT技术，APT，全称为Annotation Processor Tools ，即注解处理器
 
-要定义一个注解处理器，首先要新建一个普通Java模块，并在app模块中依赖。
+要定义一个注解处理器，首先要新建一个complier模块，并在app模块中依赖。
 在其中新建一个注解处理器，继承自AbstractProcessor，编译器已经为我们在内部实现了注解的采集，我们只需要对注解进行处理就可以了。
-```Java
+```java
 @SupportedAnnotationTypes("com.example.anatationtest.Example")
 public class ExampleProcessor extends AbstractProcessor {
     @Override
@@ -83,13 +83,13 @@ public class ExampleProcessor extends AbstractProcessor {
     }
 }
 ```
-正如Activity类需要在Manifest中注册一样，注解器也需要配置才可以生效。配置文件层级为**compiler/main/resources/META-INF/services/javax.annotation.processing.Processor**
+正如Activity类需要在Manifest中注册一样，注解器也需要配置才可以生效，就是在complier模块的resources目录下新建META-INF/services，然后新建File，并重命名为`javax.annotation.processing.Processor`
 
-其中配置文件内容为，即定义的注解处理器的路径
+其中配置文件内容为，即定义的注解处理器的路径：
 ```java
 com.example.compile.ExampleProcessor
 ```
-#### 注解处理程序运行在什时候
+#### 注解处理程序运行在什么时候
 我们知道，一个.java文件要由javac编译成.class文件，并交由虚拟机去运行。在这个过程中，javac会采集到所有的注解信息，并包装成Element节点，然后交给注解处理程序。那么怎么证明这一点呢？
 
 试着Make Project，可以在Build Output中的compileDebugJavaWithJavac Task中看到我们写在代码中的打印信息，说明javac编译.java文件的阶段调起了注解处理程序。
@@ -151,11 +151,12 @@ CLASS_ISPREVERIFIED 问题。包括了Instant Run的实现以及参照Instant Ru
 
 由于对于该技术也只是有所了解，因此不做更多赘述。如果大家感兴趣可以自己去加强学习。
 
-### 利用注解加反射实现findViewById
+## 利用注解加反射实现findViewById
 我们利用注解加反射来实现一个简单的findViewById。
 
 首先我们定义一个` @InjectView`的注解 ，里面包含一个``@Idres int ``类型的成员变量，用来存放控件的id值。
-由于程序需要在运行期间利用反射来获取元素的注解和值，因此注解应声明在Runtime阶段执行
+
+由于程序需要在运行期间利用反射来获取元素的注解和值，因此注解应声明在Runtime阶段执行：
 ```java
 @Target(ElementType.FIELD)
 @Retention(RetentionPolicy.RUNTIME)
