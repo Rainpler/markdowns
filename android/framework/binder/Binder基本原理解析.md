@@ -1,4 +1,4 @@
-[源码](https://android.googlesource.com/kernel/common/+/refs/heads/android-3.18/drivers/staging/android/binder.c)
+> 本文由 [简悦 SimpRead](http://ksria.com/simpread/) 转码， 原文地址 [blog.csdn.net](https://blog.csdn.net/universus/article/details/6211589)
 
 关键词
 
@@ -78,7 +78,8 @@ Binder 协议基本格式是（命令 + 数据），使用 ioctl(fd, cmd, arg) �
 | BINDER_VERSION|获得 Binder 驱动的版本号。|
 
 
-这其中最常用的命令是 BINDER_WRITE_READ。该命令的参数包括两部分数据：一部分是向 Binder 写入的数据，一部分是要从 Binder 读出的数据，驱动程序先处理写部分再处理读部分。这样安排的好处是应用程序可以很灵活地处理命令的同步或异步。例如若要发送异步命令可以只填入写部分而将 read_size 置成 0；若要只从 Binder 获得数据可以将写部分置空即 write_size 置成 0；若要发送请求并同步等待返回数据可以将两部分都置上。
+这其中最常用的命令是 **BINDER_WRITE_READ**。该命令的参数包括两部分数据：一部分是向 Binder 写入的数据，一部分是要从 Binder 读出的数据，驱动程序先处理写部分再处理读部分。这样安排的好处是应用程序可以很灵活地处理命令的同步或异步。例如若要发送异步命令可以只填入写部分而将 read_size 置成 0；若要只从 Binder 获得数据可以将写部分置空即 write_size 置成 0；若要发送请求并同步等待返回数据可以将两部分都置上。
+
 
 #### 4.1 BINDER_WRITE_READ 之写操作
 
@@ -112,7 +113,9 @@ Binder 写操作的数据时格式同样也是（命令 + 数据）。这时候�
 
 对于接收方来说，该结构只相当于一个定长的消息头，真正的用户数据存放在 data.buffer 所指向的缓存区中。如果发送方在数据中内嵌了一个或多个 Binder，接收到的数据包中同样会用 data.offsets 和 offset_size 指出每个 Binder 的位置和总个数。不过通常接收方可以忽略这些信息，因为接收方是知道数据格式的，参考双方约定的格式定义就能知道这些 Binder 在什么位置。
 
-[![](http://hi.csdn.net/attachment/201102/27/0_1298798589YVao.gif)](http://hi.csdn.net/attachment/201102/27/0_1298798585b9LL.gif)
+<!-- ![](http://hi.csdn.net/attachment/201102/27/0_1298798589YVao.gif) -->
+
+<!-- (http://hi.csdn.net/attachment/201102/27/0_1298798585b9LL.gif) -->
 
 图 2 BINDER_WRITE_READ 数据包实例
 
@@ -150,13 +153,13 @@ Binder 本质上只是一种底层通信方式，和具体服务没有关系。�
 
 #### 5.2 Binder 在传输数据中的表述
 
-Binder 可以塞在数据包的有效数据中越进程边界从一个进程传递给另一个进程，这些传输中的 Binder 用结构 flat_binder_object 表示，如下表所示：
+Binder 可以塞在数据包的有效数据中，越过进程边界从一个进程传递给另一个进程，这些传输中的 Binder 用结构 flat_binder_object 表示，如下表所示：
 
 表 6 Binder 传输结构：flat_binder_object
 
 <table cellspacing="0" cellpadding="0" border="1"><tbody><tr><td width="147"><p><strong>成员</strong><strong></strong></p></td><td width="622"><p><strong>含义</strong><strong></strong></p></td></tr><tr><td width="147"><p>unsigned long type</p></td><td width="622"><p>表明该 Binder 的类型，包括以下几种：</p><p>BINDER_TYPE_BINDER：表示传递的是 Binder 实体，并且指向该实体的引用都是强类型；</p><p>BINDER_TYPE_WEAK_BINDER：表示传递的是 Binder 实体，并且指向该实体的引用都是弱类型；</p><p>BINDER_TYPE_HANDLE：表示传递的是 Binder 强类型的引用</p><p>BINDER_TYPE_WEAK_HANDLE：表示传递的是 Binder 弱类型的引用</p><p>BINDER_TYPE_FD：表示传递的是文件形式的 Binder，详见下节</p></td></tr><tr><td width="147"><p>unsigned long flags</p></td><td width="622"><p>该域只对第一次传递 Binder 实体时有效，因为此刻驱动需要在内核中创建相应的实体节点，有些参数需要从该域取出：</p><p>第 0-7 位：代码中用 FLAT_BINDER_FLAG_PRIORITY_MASK 取得，表示处理本实体请求数据包的线程的最低优先级。当一个应用程序提供多个实体时，可以通过该参数调整分配给各个实体的处理能力。</p><p>第 8 位：代码中用 FLAT_BINDER_FLAG_ACCEPTS_FDS 取得，置 1 表示该实体可以接收其它进程发过来的文件形式的 Binder。由于接收文件形式的 Binder 会在本进程中自动打开文件，有些 Server 可以用该标志禁止该功能，以防打开过多文件。</p></td></tr><tr><td width="147"><p>union {</p><p>void *binder;</p><p>signed long handle;</p><p>};</p></td><td width="622"><p>当传递的是 Binder 实体时使用 binder 域，指向 Binder 实体在应用程序中的地址。</p><p>当传递的是 Binder 引用时使用 handle 域，存放 Binder 在进程中的引用号。</p></td></tr><tr><td width="147"><p>void *cookie;</p></td><td width="622"><p>该域只对 Binder 实体有效，存放与该 Binder 有关的附加信息。</p></td></tr></tbody></table>
 
-无论是 Binder 实体还是对实体的引用都从属与某个进程，所以该结构不能透明地在进程之间传输，必须经过驱动翻译。例如当 Server 把 Binder 实体传递给 Client 时，在发送数据流中，flat_binder_object 中的 type 是 BINDER_TYPE_BINDER，binder 指向 Server 进程用户空间地址。如果透传给接收端将毫无用处，驱动必须对数据流中的这个 Binder 做修改：将 type 该成 BINDER_TYPE_HANDLE；为这个 Binder 在接收进程中创建位于内核中的引用并将引用号填入 handle 中。对于发生数据流中引用类型的 Binder 也要做同样转换。经过处理后接收进程从数据流中取得的 Binder 引用才是有效的，才可以将其填入数据包 binder_transaction_data 的 target.handle 域，向 Binder 实体发送请求。
+无论是 Binder 实体还是对实体的引用都从属于某个进程，所以该结构不能透明地在进程之间传输，必须经过驱动翻译。例如当 Server 把 Binder 实体传递给 Client 时，在发送数据流中，flat_binder_object 中的 type 是 BINDER_TYPE_BINDER，binder 指向 Server 进程用户空间地址。如果透传给接收端将毫无用处，驱动必须对数据流中的这个 Binder 做修改：将 type 该成 BINDER_TYPE_HANDLE；为这个 Binder 在接收进程中创建位于内核中的引用并将引用号填入 handle 中。对于发生数据流中引用类型的 Binder 也要做同样转换。经过处理后接收进程从数据流中取得的 Binder 引用才是有效的，才可以将其填入数据包 binder_transaction_data 的 target.handle 域，向 Binder 实体发送请求。
 
 这样做也是出于安全性考虑：应用程序不能随便猜测一个引用号填入 target.handle 中就可以向 Server 请求服务了，因为驱动并没有为你在内核中创建该引用，必定会被驱动拒绝。唯有经过身份认证确认合法后，由‘权威机构’（Binder 驱动）亲手授予你的 Binder 才能使用，因为这时驱动已经在内核中为你使用该 Binder 做了注册，交给你的引用号是合法的。
 
@@ -178,7 +181,9 @@ Binder 可以塞在数据包的有效数据中越进程边界从一个进程传�
 
 驱动是 Binder 通信的核心，系统中所有的 Binder 实体以及每个实体在各个进程中的引用都登记在驱动中；驱动需要记录 Binder 引用 -> 实体之间多对一的关系；为引用找到对应的实体；在某个进程中为实体创建或查找到对应的引用；记录 Binder 的归属地（位于哪个进程中）；通过管理 Binder 的强 / 弱引用创建 / 销毁 Binder 实体等等。
 
-驱动里的 Binder 是什么时候创建的呢？前面提到过，为了实现实名 Binder 的注册，系统必须创建第一只鸡–为 SMgr 创建的，用于注册实名 Binder 的 Binder 实体，负责实名 Binder 注册过程中的进程间通信。既然创建了实体就要有对应的引用：驱动将所有进程中的 0 号引用都预留给该 Binder 实体，即所有进程的 0 号引用天然地都指向注册实名 Binder 专用的 Binder，无须特殊操作即可以使用 0 号引用来注册实名 Binder。接下来随着应用程序不断地注册实名 Binder，不断向 SMgr 索要 Binder 的引用，不断将 Binder 从一个进程传递给另一个进程，越来越多的 Binder 以传输结构 - flat_binder_object 的形式穿越驱动做跨进程的迁徙。由于 binder_transaction_data 中 data.offset 数组的存在，所有流经驱动的 Binder 都逃不过驱动的眼睛。Binder 将对这些穿越进程边界的 Binder 做如下操作：检查传输结构的 type 域，如果是 BINDER_TYPE_BINDER 或 BINDER_TYPE_WEAK_BINDER 则创建 Binder 的实体；如果是 BINDER_TYPE_HANDLE 或 BINDER_TYPE_WEAK_HANDLE 则创建 Binder 的引用；如果是 BINDER_TYPE_HANDLE 则为进程打开文件，无须创建任何数据结构。详细过程可参考表 7。随着越来越多的 Binder 实体或引用在进程间传递，驱动会在内核里创建越来越多的节点或引用，当然这个过程对用户来说是透明的。
+驱动里的 Binder 是什么时候创建的呢？前面提到过，为了实现实名 Binder 的注册，系统必须创建第一只鸡–为 SMgr 创建的，用于注册实名 Binder 的 Binder 实体，负责实名 Binder 注册过程中的进程间通信。既然创建了实体就要有对应的引用：驱动将所有进程中的 0 号引用都预留给该 Binder 实体，即所有进程的 0 号引用天然地都指向注册实名 Binder 专用的 Binder，无须特殊操作即可以使用 0 号引用来注册实名 Binder。接下来随着应用程序不断地注册实名 Binder，不断向 SMgr 索要 Binder 的引用，不断将 Binder 从一个进程传递给另一个进程，越来越多的 Binder 以传输结构 - flat_binder_object 的形式穿越驱动做跨进程的迁徙。
+
+由于 binder_transaction_data 中 data.offset 数组的存在，所有流经驱动的 Binder 都逃不过驱动的眼睛。Binder 将对这些穿越进程边界的 Binder 做如下操作：检查传输结构的 type 域，如果是 BINDER_TYPE_BINDER 或 BINDER_TYPE_WEAK_BINDER 则创建 Binder 的实体；如果是 BINDER_TYPE_HANDLE 或 BINDER_TYPE_WEAK_HANDLE 则创建 Binder 的引用；如果是 BINDER_TYPE_HANDLE 则为进程打开文件，无须创建任何数据结构。详细过程可参考表 7。随着越来越多的 Binder 实体或引用在进程间传递，驱动会在内核里创建越来越多的节点或引用，当然这个过程对用户来说是透明的。
 
 ##### 5.3.1 Binder 实体在驱动中的表述
 
@@ -200,64 +205,20 @@ Binder 可以塞在数据包的有效数据中越进程边界从一个进程传�
 
 就象一个对象有很多指针一样，同一个 Binder 实体可能有很多引用，不同的是这些引用可能分布在不同的进程中。和实体一样，每个进程使用红黑树存放所有正在使用的引用。不同的是 Binder 的引用可以通过两个键值索引：
 
-· 对应实体在内核中的地址。注意这里指的是驱动创建于内核中的 binder_node 结构的地址，而不是 Binder 实体在用户进程中的地址。实体在内核中的地址是唯一的，用做索引不会产生二义性；但实体可能来自不同用户进程，而实体在不同用户进程中的地址可能重合，不能用来做索引。驱动利用该红黑树在一个进程中快速查找某个 Binder 实体所对应的引用（一个实体在一个进程中只建立一个引用）。
+- 对应实体在内核中的地址。注意这里指的是驱动创建于内核中的 binder_node 结构的地址，而不是 Binder 实体在用户进程中的地址。实体在内核中的地址是唯一的，用做索引不会产生二义性；但实体可能来自不同用户进程，而实体在不同用户进程中的地址可能重合，不能用来做索引。驱动利用该红黑树在一个进程中快速查找某个 Binder 实体所对应的引用（一个实体在一个进程中只建立一个引用）。
 
-· 引用号。引用号是驱动为引用分配的一个 32 位标识，在一个进程内是唯一的，而在不同进程中可能会有同样的值，这和进程的打开文件号很类似。引用号将返回给应用程序，可以看作 Binder 引用在用户进程中的句柄。除了 0 号引用在所有进程里都固定保留给 SMgr，其它值由驱动动态分配。向 Binder 发送数据包时，应用程序将引用号填入 binder_transaction_data 结构的 target.handle 域中表明该数据包的目的 Binder。驱动根据该引用号在红黑树中找到引用的 binder_ref 结构，进而通过其 node 域知道目标 Binder 实体所在的进程及其它相关信息，实现数据包的路由。
+- 引用号。引用号是驱动为引用分配的一个 32 位标识，在一个进程内是唯一的，而在不同进程中可能会有同样的值，这和进程的打开文件号很类似。引用号将返回给应用程序，可以看作 Binder 引用在用户进程中的句柄。除了 0 号引用在所有进程里都固定保留给 SMgr，其它值由驱动动态分配。向 Binder 发送数据包时，应用程序将引用号填入 binder_transaction_data 结构的 target.handle 域中表明该数据包的目的 Binder。驱动根据该引用号在红黑树中找到引用的 binder_ref 结构，进而通过其 node 域知道目标 Binder 实体所在的进程及其它相关信息，实现数据包的路由。
 
 ### 6 Binder 内存映射和接收缓存区管理
 
-暂且撇开 Binder，考虑一下传统的 IPC 方式中，数据是怎样从发送端到达接收端的呢？通常的做法是，发送方将准备好的数据存放在缓存区中，调用 API 通过系统调用进入内核中。内核服务程序在内核空间分配内存，将数据从发送方缓存区复制到内核缓存区中。接收方读数据时也要提供一块缓存区，内核将数据从内核缓存区拷贝到接收方提供的缓存区中并唤醒接收线程，完成一次数据发送。这种存储 - 转发机制有两个缺陷：首先是效率低下，需要做两次拷贝：**用户空间 -> 内核空间 -> 用户空间**。Linux 使用 `copy_from_user()` 和` copy_to_user()` 实现这两个跨空间拷贝，在此过程中如果使用了高端内存（high memory），这种拷贝需要临时建立 / 取消页面映射，造成性能损失。其次是接收数据的缓存要由接收方提供，可接收方不知道到底要多大的缓存才够用，只能开辟尽量大的空间或先调用 API 接收消息头获得消息体大小，再开辟适当的空间接收消息体。两种做法都有不足，不是浪费空间就是浪费时间。
+暂且撇开 Binder，考虑一下传统的 IPC 方式中，数据是怎样从发送端到达接收端的呢？通常的做法是，发送方将准备好的数据存放在缓存区中，调用 API 通过系统调用进入内核中。内核服务程序在内核空间分配内存，将数据从发送方缓存区复制到内核缓存区中。接收方读数据时也要提供一块缓存区，内核将数据从内核缓存区拷贝到接收方提供的缓存区中并唤醒接收线程，完成一次数据发送。这种存储 - 转发机制有两个缺陷：首先是效率低下，需要做两次拷贝：用户空间 -> 内核空间 -> 用户空间。Linux 使用 copy_from_user() 和 copy_to_user() 实现这两个跨空间拷贝，在此过程中如果使用了高端内存（high memory），这种拷贝需要临时建立 / 取消页面映射，造成性能损失。其次是接收数据的缓存要由接收方提供，可接收方不知道到底要多大的缓存才够用，只能开辟尽量大的空间或先调用 API 接收消息头获得消息体大小，再开辟适当的空间接收消息体。两种做法都有不足，不是浪费空间就是浪费时间。
 
-Binder 采用一种全新策略：由 Binder 驱动负责管理数据接收缓存。我们注意到 Binder 驱动实现了 mmap() 系统调用，这对字符设备是比较特殊的，因为 `mmap() `通常用在有物理存储介质的文件系统上，而象 Binder 这样没有物理介质，纯粹用来通信的字符设备没必要支持 mmap()。Binder 驱动当然不是为了在物理介质和用户空间做映射，而是用来创建数据接收的缓存空间。先看 mmap() 是如何使用的：
-
+Binder 采用一种全新策略：由 Binder 驱动负责管理数据接收缓存。我们注意到 Binder 驱动实现了 mmap() 系统调用，这对字符设备是比较特殊的，因为 mmap() 通常用在有物理存储介质的文件系统上，而象 Binder 这样没有物理介质，纯粹用来通信的字符设备没必要支持 mmap()。Binder 驱动当然不是为了在物理介质和用户空间做映射，而是用来创建数据接收的缓存空间。先看 mmap() 是如何使用的：
 ```
 fd = open("/dev/binder", O_RDWR);
+
 mmap(NULL, MAP_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
 ```
-
-**mmap内存映射的实现过程，总的来说可以分为三个阶段：**
-
-```java
-（一）进程启动映射过程，并在虚拟地址空间中为映射创建虚拟映射区域
-
-1、进程在用户空间调用库函数mmap，原型：void *mmap(void *start, size_t length, int prot, int flags, int fd, off_t offset);
-
-2、在当前进程的虚拟地址空间中，寻找一段空闲的满足要求的连续的虚拟地址
-
-3、为此虚拟区分配一个vm_area_struct结构，接着对这个结构的各个域进行了初始化
-
-4、将新建的虚拟区结构（vm_area_struct）插入进程的虚拟地址区域链表或树中
-
-
-
-（二）调用内核空间的系统调用函数mmap（不同于用户空间函数），实现文件物理地址和进程虚拟地址的一一映射关系
-
-5、为映射分配了新的虚拟地址区域后，通过待映射的文件指针，在文件描述符表中找到对应的文件描述符，通过文件描述符，链接到内核“已打开文件集”中该文件的文件结构体（struct file），每个文件结构体维护着和这个已打开文件相关各项信息。
-
-6、通过该文件的文件结构体，链接到file_operations模块，调用内核函数mmap，其原型为：int mmap(struct file *filp, struct vm_area_struct *vma)，不同于用户空间库函数。
-
-7、内核mmap函数通过虚拟文件系统inode模块定位到文件磁盘物理地址。
-
-8、通过remap_pfn_range函数建立页表，即实现了文件地址和虚拟地址区域的映射关系。此时，这片虚拟地址并没有任何数据关联到主存中。
-
-
-
-（三）进程发起对这片映射空间的访问，引发缺页异常，实现文件内容到物理内存（主存）的拷贝
-
-注：前两个阶段仅在于创建虚拟区间并完成地址映射，但是并没有将任何文件数据的拷贝至主存。真正的文件读取是当进程发起读或写操作时。
-
-9、进程的读或写操作访问虚拟地址空间这一段映射地址，通过查询页表，发现这一段地址并不在物理页面上。因为目前只建立了地址映射，真正的硬盘数据还没有拷贝到内存中，因此引发缺页异常。
-
-10、缺页异常进行一系列判断，确定无非法操作后，内核发起请求调页过程。
-
-11、调页过程先在交换缓存空间（swap cache）中寻找需要访问的内存页，如果没有则调用nopage函数把所缺的页从磁盘装入到主存中。
-
-12、之后进程即可对这片主存进行读或者写的操作，如果写操作改变了其内容，一定时间后系统会自动回写脏页面到对应磁盘地址，也即完成了写入到文件的过程。
-
-注：修改过的脏页面并不会立即更新回文件中，而是有一段时间的延迟，可以调用msync()来强制同步, 这样所写的内容就能立即保存到文件里了。
-```
-
-
 这样 Binder 的接收方就有了一片大小为 MAP_SIZE 的接收缓存区。mmap() 的返回值是内存映射在用户空间的地址，不过这段空间是由驱动管理，用户不必也不能直接访问（映射类型为 PROT_READ，只读映射）。
 
 接收缓存区映射好后就可以做为缓存池接收和存放数据了。前面说过，接收数据包的结构为 binder_transaction_data，但这只是消息头，真正的有效负荷位于 data.buffer 所指向的内存中。这片内存不需要接收方提供，恰恰是来自 mmap() 映射的这片缓存池。在数据从发送方向接收方拷贝时，驱动会根据发送数据包的大小，使用最佳匹配算法从缓存池中找到一块大小合适的空间，将数据从发送缓存区复制过来。要注意的是，存放 binder_transaction_data 结构本身以及表 4 中所有消息的内存空间还是得由接收者提供，但这些数据大小固定，数量也不多，不会给接收方造成不便。映射的缓存池要足够大，因为接收方的线程池可能会同时处理多条并发的交互，每条交互都需要从缓存池中获取目的存储区，一旦缓存池耗竭将产生导致无法预期的后果。
@@ -274,15 +235,15 @@ Binder 通信实际上是位于不同进程中的线程之间的通信。假如�
 
 可是对于 Binder 来说，既没有侦听模式也不会下蛋，怎样管理线程池呢？一种简单的做法是，不管三七二十一，先创建一堆线程，每个线程都用 BINDER_WRITE_READ 命令读 Binder。这些线程会阻塞在驱动为该 Binder 设置的等待队列上，一旦有来自 Client 的数据驱动会从队列中唤醒一个线程来处理。这样做简单直观，省去了线程池，但一开始就创建一堆线程有点浪费资源。于是 Binder 协议引入了专门命令或消息帮助用户管理线程池，包括：
 
-· INDER_SET_MAX_THREADS
+- INDER_SET_MAX_THREADS
 
-· BC_REGISTER_LOOP
+- BC_REGISTER_LOOP
 
-· BC_ENTER_LOOP
+- BC_ENTER_LOOP
 
-· BC_EXIT_LOOP
+- BC_EXIT_LOOP
 
-· BR_SPAWN_LOOPER
+- BR_SPAWN_LOOPER
 
 首先要管理线程池就要知道池子有多大，应用程序通过 INDER_SET_MAX_THREADS 告诉驱动最多可以创建几个线程。以后每个线程在创建，进入主循环，退出主循环时都要分别使用 BC_REGISTER_LOOP，BC_ENTER_LOOP，BC_EXIT_LOOP 告知驱动，以便驱动收集和记录当前线程池的状态。每当驱动接收完数据包返回读 Binder 的线程时，都要检查一下是不是已经没有闲置线程了。如果是，而且线程总数不会超出线程池最大线程数，就会在当前读出的数据包后面再追加一条 BR_SPAWN_LOOPER 消息，告诉用户线程即将不够用了，请再启动一些，否则下一个请求可能不能及时响应。新线程一启动又会通过 BC_xxx_LOOP 告知驱动更新状态。这样只要线程没有耗尽，总是有空闲线程在等待队列中随时待命，及时处理请求。
 
