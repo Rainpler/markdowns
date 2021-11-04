@@ -29,6 +29,7 @@ ServiceManager 本身工作相对简单，其功能：查询和注册服务。 �
 2.  注册成为 binder 服务的大管家：binder_become_context_manager；
 3.  进入无限循环，处理 client 端发来的请求：binder_loop；
 
+![](../../../res/servicemanager的启动流程.jpg)
 二. 启动过程
 -------
 
@@ -144,6 +145,13 @@ struct binder_state
 };
 ```
 ### 2.3 binder_become_context_manager
+
+binder_become_context_manager这个函数主要就是做了两件事:
+
+首先通过调用ioctl最终进入到binder内核中，通过设备文件的private_data字段得到进程信息binder_pro，然后调用`binder_get_thread`函数从binder_proc上找到发起binder_become_context_manager调用的binder_thread信息，`binder_get_thread`的内部逻辑会首先在binder_proc的threads队列上找匹配的binder_thread，此时threads上没有任何binder_thread，所以逻辑会进入到创建`binder_thread`流程中，并将创建的binder_thread保存到threads上，那么下次再调用binder_get_thread的时候就能找到相应的binder_thread了。这是binder_become_context_manager做的第一件事，创建或者找到binder_thread。
+
+第二件事就是通过调用binder_new_node创建一个binder_node实体对象，并将该binder_node设置给binder_context_mgr_node，binder_node中通过proc字段来表示对应的进程信息。这个binder_context_mgr_node非常重要是各个client今后获取各种系统服务都要打交道的一个binder实体对象。
+
 
 [-> servicemanager/binder.c]
 ```java
@@ -366,31 +374,57 @@ static int binder_ioctl_write_read(struct file *filp,
     struct binder_proc *proc = filp->private_data;
     void __user *ubuf = (void __user *)arg;
     struct binder_write_read bwr;
- 
-    if (copy_from_user(&bwr, ubuf, sizeof(bwr))) { //把用户空间数据ubuf拷贝到bwr
-        ret = -EFAULT;
-        goto out;
-    }
- 
-    if (bwr.write_size > 0) { //此时写缓存有数据【见小节2.4.4】
-        ret = binder_thread_write(proc, thread,
-                  bwr.write_buffer, bwr.write_size, &bwr.write_consumed);
-        ...
-    }
- 
-    if (bwr.read_size > 0) { //此时读缓存无数据
-        ...
-    }
- 
-    if (copy_to_user(ubuf, &bwr, sizeof(bwr))) { //将内核数据bwr拷贝到用户空间ubuf
-        ret = -EFAULT;
-        goto out;
-    }
+    if (size != sizeof(struct binder_write_read)) {
+        ret = -EINVAL;
+        goto err;
+    }
+    /* 从用户态地址读取struct binder_write_read结构体 */
+    if (copy_from_user(&bwr, ubuf, sizeof(bwr))) {
+        ret = -EFAULT;
+        goto err;
+    }
+    if (binder_debug_mask & BINDER_DEBUG_READ_WRITE)
+        printk(KERN_INFO "binder: %d:%d write %ld at %08lx, read %ld at %08lx\n",
+        proc->pid, thread->pid, bwr.write_size, bwr.write_buffer, bwr.read_size, bwr.read_buffer);
+        /* write_size大于0，表示用户进程有数据发送到驱动，则调用binder_thread_write发送数据 */
+    if (bwr.write_size > 0) {
+        ret = binder_thread_write(proc, thread, (void __user *)bwr.write_buffer, bwr.write_size, &bwr.write_consumed);
+        if (ret < 0) {
+            bwr.read_consumed = 0;
+            if (copy_to_user(ubuf, &bwr, sizeof(bwr)))
+                ret = -EFAULT;
+            goto err;
+        }
+    }
+     /*read_size大于0， 表示进程用户态地址空间希望有数据返回给它，则调用binder_thread_read进行处理*/
+    if (bwr.read_size > 0) {
+        ret = binder_thread_read(proc, thread, (void __user *)bwr.read_buffer,
+                bwr.read_size,
+                &bwr.read_consumed,
+                filp->f_flags & O_NONBLOCK);
+
+        /*读取完后，如果proc->todo链表不为空，则唤醒在proc->wait等待队列上的进程*/
+        if (!list_empty(&proc->todo))
+            wake_up_interruptible(&proc->wait);
+        if (ret < 0) {
+            if (copy_to_user(ubuf, &bwr, sizeof(bwr)))
+                ret = -EFAULT;
+            goto err;
+        }
+    }
+    ......
+    /* 处理成功的情况，也需要将bwr拷贝回进程的用户态地址空间*/
+    if (copy_to_user(ubuf, &bwr, sizeof(bwr))) {
+        ret = -EFAULT;
+        goto err;
+    }
+    break;
 out:
     return ret;
 }
 ```
-此处将用户空间的 binder_write_read 结构体 拷贝到内核空间.
+从代码可以看出binder_ioctl是先执行write然后才执行read操作的，这部分代码中有两个需要关注的地方，第一可以在代码中发现一对函数copy_from_user和copy_to_user，前者用来将用户空间数据拷贝到内核空间，后者用来将内核空间数据返回给用户空间，binder_ioctl就是通过这对函数实现内核态和用户态的数据传递。
+
 
 2.4.4 binder_thread_write
 
@@ -538,9 +572,8 @@ void bio_init_from_txn(struct binder_io *bio, struct binder_transaction_data *tx
     bio->offs_avail = txn->offsets_size / sizeof(size_t);
     bio->flags = BIO_F_SHARED;
 }
-
-将 readbuf 的数据赋给 bio 对象的 data
 ```
+将 readbuf 的数据赋给 bio 对象的 data。
 ### 2.6 svcmgr_handler
 
 [-> service_manager.c]
@@ -772,7 +805,7 @@ int do_add_service(struct binder_state *bs,
         si->next = svclist; // svclist 保存所有已注册的服务
         svclist = si;
     }
- 
+  
     // 以 BC_ACQUIRE 命令，handle 为目标的信息，通过 ioctl 发送给 binder 驱动
     binder_acquire(bs, handle);
     // 以 BC_REQUEST_DEATH_NOTIFICATION 命令的信息，通过 ioctl 发送给 binder 驱动，主要用于清理内存等收尾工作。[见小节 3.3]
