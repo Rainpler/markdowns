@@ -1,12 +1,7 @@
-> 本文由 [简悦 SimpRead](http://ksria.com/simpread/) 转码， 原文地址 [blog.csdn.net](https://blog.csdn.net/tenggangren/article/details/50925740)
-
-文／裸奔的凯子哥（简书作者）
-原文链接：http://www.jianshu.com/p/6037f6fda285
-著作权归作者所有，转载请联系作者获得授权，并标注 “简书作者”。
 
 
-前言
-==
+
+## 前言
 
 *   一个 App 是怎么启动起来的？
 *   App 的程序入口到底是哪里？
@@ -18,23 +13,20 @@
 
 你是不是还有很多类似的疑问一直没有解决？没关系，这篇文章将结合源码以及大量的优秀文章，站在巨人的肩膀上，更加通俗的来试着解释一些问题。但是毕竟源码繁多、经验有限，文中不免会出现一些纰漏甚至是错误，还恳请大家指出，互相学习。
 
-学习目标
-====
+## 学习目标
 
 1.  了解从手机开机第一个 zygote 进程创建，到点击桌面上的图标，进入一个 App 的完整流程，并且从源码的角度了解到一个 Activity 的生命周期是怎么回事
 2.  了解到 ActivityManagerServices(即 AMS)、ActivityStack、ActivityThread、Instrumentation 等 Android framework 中非常重要的基础类的作用，及相互间的关系
 3.  了解 AMS 与 ActivityThread 之间利用 Binder 进行 IPC 通信的过程，了解 AMS 和 ActivityThread 在控制 Activity 生命周期起到的作用和相互之间的配合
 4.  了解与 Activity 相关的 framework 层的其他琐碎问题
 
-写作方式
-====
+## 写作方式
 
 这篇文章我决定采用一问一答的方式进行。
 
 其实在这之前，我试过把每个流程的代码调用过程，用粘贴源代码的方式写在文章里，但是写完一部分之后，发现由于代码量太大，整篇文章和老太太的裹脚布一样——又臭又长，虽然每个重要的操作可以显示出详细调用过程，但是太关注于细节反而导致从整体上不能很好的把握。所以在原来的基础之上进行了修改，对关键的几个步骤进行重点介绍，力求语言简洁，重点突出，从而让大家在更高的层次上对 framework 层有个认识，然后结合后面我给出的参考资料，大家就可以更加快速，更加高效的了解这一块的整体架构。
 
-主要对象功能介绍
-========
+## 主要对象功能介绍
 
 我们下面的文章将围绕着这几个类进行介绍。可能你第一次看的时候，印象不深，不过没关系，当你跟随者我读完这篇文章的时候，我会在最后再次列出这些对象的功能，相信那时候你会对这些类更加的熟悉和深刻。
 
@@ -47,15 +39,15 @@
 *   ActivityRecord，ActivityStack 的管理对象，每个 Activity 在 AMS 对应一个 ActivityRecord，来记录 Activity 的状态以及其他的管理信息。其实就是服务器端的 Activity 对象的映像。
 *   TaskRecord，AMS 抽象出来的一个 “任务” 的概念，是记录 ActivityRecord 的栈，一个 “Task” 包含若干个 ActivityRecord。AMS 用 TaskRecord 确保 Activity 启动和退出的顺序。如果你清楚 Activity 的 4 种 launchMode，那么对这个概念应该不陌生。
 
-主要流程介绍
-======
+## 主要流程介绍
+
 
 下面将按照 App 启动过程的先后顺序，一问一答，来解释一些事情。
 
 让我们开始吧！
 
-zygote 是什么？有什么作用？
------------------
+### zygote 是什么？有什么作用？
+
 
 首先，你觉得这个单词眼熟不？当你的程序 Crash 的时候，打印的红色 log 下面通常带有这一个单词。
 
@@ -70,8 +62,8 @@ zygote 意为 “受精卵 “。Android 是基于 Linux 系统的，而在 Linu
 
 所以当系统里面的第一个 zygote 进程运行之后，在这之后再开启 App，就相当于开启一个新的进程。而为了实现资源共用和更快的启动速度，Android 系统开启新进程的方式，是通过 fork 第一个 zygote 进程实现的。所以说，除了第一个 zygote 进程，其他应用所在的进程都是 zygote 的子进程，这下你明白为什么这个进程叫 “受精卵” 了吧？因为就像是一个受精卵一样，它能快速的分裂，并且产生遗传物质一样的细胞！
 
-SystemServer 是什么？有什么作用？它与 zygote 的关系是什么？
-----------------------------------------
+### SystemServer 是什么？有什么作用？它与 zygote 的关系是什么？
+
 
 首先我要告诉你的是，SystemServer 也是一个进程，而且是由 zygote 进程 fork 出来的。
 
@@ -171,8 +163,8 @@ public static void main(String argv[]) {
 ```
 
 
-ActivityManagerService 是什么？什么时候初始化的？有什么作用？
-------------------------------------------
+### ActivityManagerService 是什么？什么时候初始化的？有什么作用？
+
 
 ActivityManagerService，简称 AMS，服务端对象，负责系统中所有 Activity 的生命周期。
 
@@ -283,8 +275,8 @@ App 与 AMS 通过 Binder 进行 IPC 通信，AMS(SystemServer 进程) 与 zygot
 
 这样说你可能还是觉得比较抽象，没关系，下面有一部分是专门来介绍 AMS 与 ActivityThread 如何一起合作控制 Activity 的生命周期的。
 
-Launcher 是什么？什么时候启动的？
----------------------
+### Launcher 是什么？什么时候启动的？
+
 
 当我们点击手机桌面上的图标的时候，App 就由 Launcher 开始启动了。但是，你有没有思考过 Launcher 到底是一个什么东西？
 
@@ -585,8 +577,8 @@ public void callActivityOnCreate(Activity activity, Bundle icicle) {
 
 所以我们现在明确了，Launcher 中开启一个 App，其实和我们在 Activity 中直接 startActivity() 基本一样，都是调用了 Activity.startActivityForResult()。
 
-Instrumentation 是什么？和 ActivityThread 是什么关系？
--------------------------------------------
+### Instrumentation 是什么？和 ActivityThread 是什么关系？
+
 
 还记得前面说过的 Instrumentation 对象吗？每个 Activity 都持有 Instrumentation 对象的一个引用，但是整个进程只会存在一个 Instrumentation 对象。当 startActivityForResult() 调用之后，实际上还是调用了 mInstrumentation.execStartActivity()
 
@@ -713,8 +705,8 @@ ActivityThread 就说：“没问题！” 然后转身和 Instrumentation 说�
 
 所以说，AMS 是董事会，负责指挥和调度的，ActivityThread 是老板，虽然说家里的事自己说了算，但是需要听从 AMS 的指挥，而 Instrumentation 则是老板娘，负责家里的大事小事，但是一般不抛头露面，听一家之主 ActivityThread 的安排。
 
-如何理解 AMS 和 ActivityThread 之间的 Binder 通信？
-----------------------------------------
+### 如何理解 AMS 和 ActivityThread 之间的 Binder 通信？
+
 
 前面我们说到，在调用 startActivity() 的时候，实际上调用的是
 
@@ -855,8 +847,8 @@ final int startActivityLocked(IApplicationThread caller,
 
 剩下的就不必多说了吧，和前面一样。
 
-AMS 接收到客户端的请求之后，会如何开启一个 Activity？
----------------------------------
+### AMS 接收到客户端的请求之后，会如何开启一个 Activity？
+
 
 OK，至此，点击桌面图标调用 startActivity()，终于把数据和要开启 Activity 的请求发送到了 AMS 了。说了这么多，其实这些都在一瞬间完成了，下面咱们研究下 AMS 到底做了什么。
 
@@ -1174,11 +1166,11 @@ private final boolean attachApplicationLocked(IApplicationThread thread,
 
 [请戳这里 (图片 3.3M，请用电脑观看)](http://i11.tietuku.com/0582844414810f38.png)
 
-送给你们的彩蛋
-=======
+### 送给你们的彩蛋
 
-不要使用 startActivityForResult(intent,RESULT_OK)
----------------------------------------------
+
+#### 不要使用 startActivityForResult(intent,RESULT_OK)
+
 
 这是因为 startActivity() 是这样实现的
 
@@ -1273,13 +1265,13 @@ private void handleBindApplication(AppBindData data) {
 
 你不可能从 onActivityResult() 里面收到任何回调。而这个问题是相当难以被发现的，就是因为这个坑，我工作一年多来第一次加班到 9 点 (ˇˍˇ）
 
-一个 App 的程序入口到底是什么？
-------------------
+### 一个 App 的程序入口到底是什么？
+
 
 是 ActivityThread.main()。
 
-整个 App 的主线程的消息循环是在哪里创建的？
-------------------------
+### 整个 App 的主线程的消息循环是在哪里创建的？
+
 
 是在 ActivityThread 初始化的时候，就已经创建消息循环了，所以在主线程里面创建 Handler 不需要指定 Looper，而如果在其他线程使用 Handler，则需要单独使用 Looper.prepare() 和 Looper.loop() 创建消息循环。
 
@@ -1326,8 +1318,8 @@ public Application makeApplication(boolean forceDefaultAppClass,
     }
 ```
 
-Application 是在什么时候创建的？onCreate() 什么时候调用的？
------------------------------------------
+### Application 是在什么时候创建的？onCreate() 什么时候调用的？
+
 
 也是在 ActivityThread.main() 的时候，再具体点呢，就是在 thread.attach(false) 的时候。
 
@@ -1517,27 +1509,27 @@ static public Application newApplication(Class<?> clazz, Context context)
 
 而且通过反射拿到 Application 对象之后，直接调用 attach()，所以 attach() 调用是在 onCreate() 之前的。
 
-参考文章
-====
+## 参考文章
+
 
 下面的这些文章都是这方面比较精品的，希望你抽出时间研究，这可能需要花费很长时间，但是如果你想进阶为中高级开发者，这一步是必须的。
 
 再次感谢下面这些文章的作者的分享精神。
 
-Binder
-------
+### Binder
+
 
 *   [Android Bander 设计与实现 - 设计篇](http://blog.csdn.net/universus/article/details/6211589)
 
-zygote
-------
+### zygote
+
 
 *   [Android 系统进程 Zygote 启动过程的源代码分析](http://blog.csdn.net/luoshengyang/article/details/6768304)
 *   [Android 之 zygote 与进程创建](http://blog.csdn.net/xieqibao/article/details/6581975)
 *   [Zygote 浅谈](http://www.th7.cn/Program/Android/201404/187670.shtml)
 
-ActivityThread、Instrumentation、AMS
-----------------------------------
+### ActivityThread、Instrumentation、AMS
+
 
 *   [Android Activity.startActivity 流程简介](http://blog.csdn.net/myarrow/article/details/14224273)
 *   [Android 应用程序进程启动过程的源代码分析](http://blog.csdn.net/luoshengyang/article/details/6747696#comments)
@@ -1546,14 +1538,14 @@ ActivityThread、Instrumentation、AMS
 *   [ActivityManagerService 分析一：AMS 的启动](http://www.xuebuyuan.com/2172927.html)
 *   [Android 应用程序窗口设计框架介绍](http://blog.csdn.net/yangwen123/article/details/35987609)
 
-Launcher
---------
+### Launcher
+
 
 *   [Android 4.0 Launcher 源码分析系列 (一)](http://mobile.51cto.com/hot-312129.htm)
 *   [Android Launcher 分析和修改 9——Launcher 启动 APP 流程](http://www.cnblogs.com/mythou/p/3187881.html)
 
-结语
-==
+## 结语
+
 
 OK，到这里，这篇文章算是告一段落了，我们再回头看看一开始的几个问题，你还困惑吗？
 
