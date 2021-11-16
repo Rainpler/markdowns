@@ -130,6 +130,7 @@ public final class SystemServer {
 
           System.loadLibrary("android_servers");
 
+          // 检查最近一次关机是否失败
           performPendingShutdown();
           // 创建上下文对象
           createSystemContext();
@@ -193,6 +194,280 @@ private void startBootstrapServices() {
             mFactoryTestMode != FactoryTest.FACTORY_TEST_OFF, mOnlyCore);
 
     // ...
+    mActivityManagerService.setSystemProcess();
 }
 ```
-经过上面这些步骤，AMS服务就已经被启动了，并且在`createSystemContext()`方法中，完成了ActivityThread的创建，并通过`attach()`方法将两者绑定。
+在这里，我们注意到在startService方法中创建ActivityManagerService的时候，传入的是ActivityManagerService.Lifecycle，并通过反射调用构造函数，得到ActivityManagerService.Lifecycle的实例，最后返回作为ActivityManagerService的对象。
+```java
+public <T extends SystemService> T startService(Class<T> serviceClass) {
+   try {
+        final String name = serviceClass.getName();
+        final T service;
+        try {
+          Constructor<T> constructor = serviceClass.getConstructor(Context.class);
+          service = constructor.newInstance(mContext);
+          startService(service);
+          return service;
+       }
+    }
+```
+接下来我们来看一下这个ActivityManagerService.Lifecycle是一个什么样的类。
+```java
+public static final class Lifecycle extends SystemService {
+    private final ActivityManagerService mService;
+    private static ActivityTaskManagerService sAtm;
+
+    public Lifecycle(Context context) {
+        super(context);
+        mService = new ActivityManagerService(context, sAtm);
+    }
+
+    public static ActivityManagerService startService(
+            SystemServiceManager ssm, ActivityTaskManagerService atm) {
+        sAtm = atm;
+        return ssm.startService(ActivityManagerService.Lifecycle.class).getService();
+    }
+
+    @Override
+    public void onStart() {
+        mService.start();
+    }
+
+    @Override
+    public void onBootPhase(int phase) {
+        mService.mBootPhase = phase;
+        if (phase == PHASE_SYSTEM_SERVICES_READY) {
+            mService.mBatteryStatsService.systemServicesReady();
+            mService.mServices.systemServicesReady();
+        } else if (phase == PHASE_ACTIVITY_MANAGER_READY) {
+            mService.startBroadcastObservers();
+        } else if (phase == PHASE_THIRD_PARTY_APPS_CAN_START) {
+            mService.mPackageWatchdog.onPackagesReady();
+        }
+    }
+
+    @Override
+    public void onCleanupUser(int userId) {
+        mService.mBatteryStatsService.onCleanupUser(userId);
+    }
+
+    public ActivityManagerService getService() {
+        return mService;
+    }
+}
+```
+Lifecycle继承自SystemService，在构造方法中实例化了ActivityManagerService实例，并覆写了SystemService的`onStart()`和`onBootPhase()`方法。从这里来看，ActivityManagerService.Lifecycle持有ActivityManagerService的引用，SystemService通过Lifecycle来对它进行管理，在不同的生命周期，调用ActivityManagerService相应的方法。
+
+
+最后，当开启完一系列服务后，会调用`setSystemProcess()`方法
+```java
+public void setSystemProcess() {
+    try {
+        ServiceManager.addService(Context.ACTIVITY_SERVICE, this, /* allowIsolated= */ true,
+                DUMP_FLAG_PRIORITY_CRITICAL | DUMP_FLAG_PRIORITY_NORMAL | DUMP_FLAG_PROTO);
+        ServiceManager.addService(ProcessStats.SERVICE_NAME, mProcessStats);
+        ServiceManager.addService("meminfo", new MemBinder(this), /* allowIsolated= */ false,
+                DUMP_FLAG_PRIORITY_HIGH);
+        ServiceManager.addService("gfxinfo", new GraphicsBinder(this));
+        ServiceManager.addService("dbinfo", new DbBinder(this));
+        if (MONITOR_CPU_USAGE) {
+            ServiceManager.addService("cpuinfo", new CpuBinder(this),
+                    /* allowIsolated= */ false, DUMP_FLAG_PRIORITY_CRITICAL);
+        }
+        ServiceManager.addService("permission", new PermissionController(this));
+        ServiceManager.addService("processinfo", new ProcessInfoService(this));
+
+        ApplicationInfo info = mContext.getPackageManager().getApplicationInfo(
+                "android", STOCK_PM_FLAGS | MATCH_SYSTEM_ONLY);
+        mSystemThread.installSystemApplicationInfo(info, getClass().getClassLoader());
+
+        synchronized (this) {
+            ProcessRecord app = mProcessList.newProcessRecordLocked(info, info.processName,
+                    false,
+                    0,
+                    new HostingRecord("system"));
+            app.setPersistent(true);
+            app.pid = MY_PID;
+            app.getWindowProcessController().setPid(MY_PID);
+            app.maxAdj = ProcessList.SYSTEM_ADJ;
+            app.makeActive(mSystemThread.getApplicationThread(), mProcessStats);
+            mPidsSelfLocked.put(app);
+            mProcessList.updateLruProcessLocked(app, false, null);
+            updateOomAdjLocked(OomAdjuster.OOM_ADJ_REASON_NONE);
+        }
+    } catch (PackageManager.NameNotFoundException e) {
+        throw new RuntimeException(
+                "Unable to find android system package", e);
+    }
+
+    // Start watching app ops after we and the package manager are up and running.
+    mAppOpsService.startWatchingMode(AppOpsManager.OP_RUN_IN_BACKGROUND, null,
+            new IAppOpsCallback.Stub() {
+                @Override public void opChanged(int op, int uid, String packageName) {
+                    if (op == AppOpsManager.OP_RUN_IN_BACKGROUND && packageName != null) {
+                        if (mAppOpsService.checkOperation(op, uid, packageName)
+                                != AppOpsManager.MODE_ALLOWED) {
+                            runInBackgroundDisabled(uid);
+                        }
+                    }
+                }
+            });
+}
+```
+
+- 注册服务。首先将ActivityManagerService注册到ServiceManager中，其次将几个与系统性能调试相关的服务注册到ServiceManager。这里还涉及到两个重要操作：
+
+- 查询并处理ApplicationInfo。首先调用PackageManagerService的接口，查询包名为android的应用程序的ApplicationInfo信息，对应于**framework-res.apk**。然后以该信息为参数调用`ActivityThread上的installSystemApplicationInfo()`方法。
+
+- 创建并处理ProcessRecord。调用ActivityManagerService上的newProcessRecordLocked，创建一个ProcessRecord类型的对象，并保存该对象的信息
+
+经过上面这些步骤，ActivityManagerService的启动流程就走完了，且在`createSystemContext()`方法中完成了ActivityThread的创建，并通过`attach()`方法将两者绑定。
+
+#### AMS的初始化工作
+
+我们一开始就说了，AMS是一个特别重要的系统服务，主要负责四大组件的管理和调度工作，所以再来看看AMS的初始化做了哪些工作：
+```java
+public ActivityManagerService(Context systemContext) {
+    LockGuard.installLock(this, LockGuard.INDEX_ACTIVITY);
+    mInjector = new Injector();
+    mContext = systemContext;//赋值mContext
+    mFactoryTest = FactoryTest.getMode();
+    mSystemThread = ActivityThread.currentActivityThread();//获取当前的ActivityThread
+    mUiContext = mSystemThread.getSystemUiContext();//赋值mUiContext
+    Slog.i(TAG, "Memory class: " + ActivityManager.staticGetMemoryClass());
+    mPermissionReviewRequired = mContext.getResources().getBoolean(
+    com.android.internal.R.bool.config_permissionReviewRequired);
+
+    //创建Handler线程，用来处理handler消息
+    mHandlerThread = new ServiceThread(TAG, THREAD_PRIORITY_FOREGROUND, false /*allowIo*/);
+    mHandlerThread.start();
+
+    mHandler = new MainHandler(mHandlerThread.getLooper());
+    mUiHandler = mInjector.getUiHandler(this);//处理ui相关msg的Handler
+    mProcStartHandlerThread = new ServiceThread(TAG + ":procStart", THREAD_PRIORITY_FOREGROUND, false /* allowIo */);
+    mProcStartHandlerThread.start();
+    mProcStartHandler = new Handler(mProcStartHandlerThread.getLooper());
+
+    //管理AMS的一些常量，厂商定制系统就可能修改此处
+    mConstants = new ActivityManagerConstants(this, mHandler);
+    /* static; one-time init here */
+    if (sKillHandler == null) {
+        sKillThread = new ServiceThread(TAG + ":kill",
+        THREAD_PRIORITY_BACKGROUND, true /* allowIo */);
+        sKillThread.start();
+        sKillHandler = new KillHandler(sKillThread.getLooper());
+    }
+    //初始化管理前台、后台广播的队列， 系统会优先遍历发送前台广播
+    mFgBroadcastQueue = new BroadcastQueue(this, mHandler, "foreground", BROADCAST_FG_TIMEOUT, false);
+    mBgBroadcastQueue = new BroadcastQueue(this, mHandler, "background", BROADCAST_BG_TIMEOUT, true);
+    mBroadcastQueues[0] = mFgBroadcastQueue;
+    mBroadcastQueues[1] = mBgBroadcastQueue;
+    //初始化管理Service的 ActiveServices对象
+    mServices = new ActiveServices(this);
+    //初始化Provider的管理者
+    mProviderMap = new ProviderMap(this);
+    //初始化APP错误日志的打印器
+    mAppErrors = new AppErrors(mUiContext, this);
+    //创建电池统计服务， 并输出到指定目录
+    File dataDir = Environment.getDataDirectory();
+    File systemDir = new File(dataDir, "system");
+    systemDir.mkdirs();
+    mAppWarnings = new AppWarnings(this, mUiContext, mHandler, mUiHandler, systemDir);
+    // TODO: Move creation of battery stats service outside of activity manager service.
+    mBatteryStatsService = new BatteryStatsService(systemContext, systemDir, mHandler);
+    mBatteryStatsService.getActiveStatistics().readLocked();
+    mBatteryStatsService.scheduleWriteToDisk();
+    mOnBattery = DEBUG_POWER ? true :
+          mBatteryStatsService.getActiveStatistics().getIsOnBattery();
+    //创建进程统计分析服务，追踪统计哪些进程有滥用或不良行为
+    mBatteryStatsService.getActiveStatistics().setCallback(this);
+    mProcessStats = new ProcessStatsService(this, new File(systemDir, "procstats"));
+    mAppOpsService = mInjector.getAppOpsService(new File(systemDir,"appops.xml"), mHandler);
+    //加载Uri的授权文件
+    mGrantFile = new AtomicFile(new File(systemDir, "urigrants.xml"), "urigrants");
+    //负责管理多用户
+    mUserController = new UserController(this);
+    //vr功能的控制器
+    mVrController = new VrController(this);
+    //初始化OpenGL版本号
+    GL_ES_VERSION = SystemProperties.getInt("ro.opengles.version", ConfigurationInfo.GL_ES_VERSION_UNDEFINED);
+    if (SystemProperties.getInt("sys.use_fifo_ui", 0) != 0) {
+        mUseFifoUiScheduling = true;
+    }
+    mTrackingAssociations = "1".equals(SystemProperties.get("debug.trackassociations"));
+    mTempConfig.setToDefaults();
+    mTempConfig.setLocales(LocaleList.getDefault());
+    mConfigurationSeq = mTempConfig.seq = 1;
+
+    //管理ActivityStack的重要类，这里面记录着activity状态信息，是AMS中的核心类
+    mStackSupervisor = createStackSupervisor();
+    mStackSupervisor.onConfigurationChanged(mTempConfig);
+    //根据当前可见的Activity类型，控制Keyguard遮挡，关闭和转换。 Keyguard就是我们的锁屏相关页面
+    mKeyguardController = mStackSupervisor.getKeyguardController();
+    // 管理APK的兼容性配置
+    // 解析/data/system/packages-compat.xml文件，该文件用于存储那些需要考虑屏幕尺寸的APK信息，
+    mCompatModePackages = new CompatModePackages(this, systemDir, mHandler);
+    //Intent防火墙，Google定义了一组规则，来过滤intent，如果触发了，则intent会被系统丢弃，且不会告知发送者
+    mIntentFirewall = new IntentFirewall(new IntentFirewallInterface(), mHandler);
+    mTaskChangeNotificationController =
+    new TaskChangeNotificationController(this, mStackSupervisor, mHandler);
+    //这是activity启动的处理类，这里管理者activity启动中用到的intent信息和flag标识，也和stack和task有重要的联系
+    mActivityStartController = new ActivityStartController(this);
+    mRecentTasks = createRecentTasks();
+    mStackSupervisor.setRecentTasks(mRecentTasks);
+    mLockTaskController = new LockTaskController(mContext, mStackSupervisor, mHandler);
+    mLifecycleManager = new ClientLifecycleManager();
+    //启动一个线程专门跟进cpu当前状态信息，AMS对当前cpu状态了如指掌，可以更加高效的安排其他工作
+    mProcessCpuThread = new Thread("CpuTracker") {
+        @Override
+        public void run() {
+            synchronized (mProcessCpuTracker) {
+                mProcessCpuInitLatch.countDown();
+                mProcessCpuTracker.init();
+            }
+            while (true) {
+                try {
+                    try {
+                        synchronized(this) {
+                            final long now = SystemClock.uptimeMillis();
+                            long nextCpuDelay = (mLastCpuTime.get()+MONITOR_CPU_MAX_TIME)-now;
+                            long nextWriteDelay = (mLastWriteTime+BATTERY_STATS_TIME) - now;
+                            //Slog.i(TAG, "Cpu delay=" + nextCpuDelay
+
+                            // + ", write delay=" + nextWriteDelay);
+                            if (nextWriteDelay < nextCpuDelay) {
+                                nextCpuDelay = nextWriteDelay;
+                            }
+                            if (nextCpuDelay > 0) {
+                                mProcessCpuMutexFree.set(true);
+                                this.wait(nextCpuDelay);
+                            }
+                      }
+                  } catch (InterruptedException e) {
+                  }
+                  updateCpuStatsNow();
+              } catch (Exception e) {
+                  Slog.e(TAG, "Unexpected exception collecting process
+                  stats", e);
+              }
+          }
+        }
+    };
+    mHiddenApiBlacklist = new HiddenApiSettings(mHandler, mContext);
+    //看门狗，监听进程。这个类每分钟调用一次监视器。 如果进程没有任何返回就杀掉
+    Watchdog.getInstance().addMonitor(this);
+    Watchdog.getInstance().addThread(mHandler);
+    // bind background thread to little cores
+    // this is expected to fail inside of framework tests because apps can't touch cpusets directly
+    // make sure we've already adjusted system_server's internal view of itself first
+    updateOomAdjLocked();
+    try {
+        Process.setThreadGroupAndCpuset(BackgroundThread.get().getThreadId(),
+        Process.THREAD_GROUP_BG_NONINTERACTIVE);
+    } catch (Exception e) {
+        Slog.w(TAG, "Setting background thread cpuset failed");
+    }
+}
+
+```
+#### AMS的相关重要类
