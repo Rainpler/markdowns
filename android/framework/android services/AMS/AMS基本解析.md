@@ -259,72 +259,6 @@ public static final class Lifecycle extends SystemService {
 Lifecycle继承自SystemService，在构造方法中实例化了ActivityManagerService实例，并覆写了SystemService的`onStart()`和`onBootPhase()`方法。从这里来看，ActivityManagerService.Lifecycle持有ActivityManagerService的引用，SystemService通过Lifecycle来对它进行管理，在不同的生命周期，调用ActivityManagerService相应的方法。
 
 
-最后，当开启完一系列服务后，会调用`setSystemProcess()`方法
-```java
-public void setSystemProcess() {
-    try {
-        ServiceManager.addService(Context.ACTIVITY_SERVICE, this, /* allowIsolated= */ true,
-                DUMP_FLAG_PRIORITY_CRITICAL | DUMP_FLAG_PRIORITY_NORMAL | DUMP_FLAG_PROTO);
-        ServiceManager.addService(ProcessStats.SERVICE_NAME, mProcessStats);
-        ServiceManager.addService("meminfo", new MemBinder(this), /* allowIsolated= */ false,
-                DUMP_FLAG_PRIORITY_HIGH);
-        ServiceManager.addService("gfxinfo", new GraphicsBinder(this));
-        ServiceManager.addService("dbinfo", new DbBinder(this));
-        if (MONITOR_CPU_USAGE) {
-            ServiceManager.addService("cpuinfo", new CpuBinder(this),
-                    /* allowIsolated= */ false, DUMP_FLAG_PRIORITY_CRITICAL);
-        }
-        ServiceManager.addService("permission", new PermissionController(this));
-        ServiceManager.addService("processinfo", new ProcessInfoService(this));
-
-        ApplicationInfo info = mContext.getPackageManager().getApplicationInfo(
-                "android", STOCK_PM_FLAGS | MATCH_SYSTEM_ONLY);
-        mSystemThread.installSystemApplicationInfo(info, getClass().getClassLoader());
-
-        synchronized (this) {
-            ProcessRecord app = mProcessList.newProcessRecordLocked(info, info.processName,
-                    false,
-                    0,
-                    new HostingRecord("system"));
-            app.setPersistent(true);
-            app.pid = MY_PID;
-            app.getWindowProcessController().setPid(MY_PID);
-            app.maxAdj = ProcessList.SYSTEM_ADJ;
-            app.makeActive(mSystemThread.getApplicationThread(), mProcessStats);
-            mPidsSelfLocked.put(app);
-            mProcessList.updateLruProcessLocked(app, false, null);
-            updateOomAdjLocked(OomAdjuster.OOM_ADJ_REASON_NONE);
-        }
-    } catch (PackageManager.NameNotFoundException e) {
-        throw new RuntimeException(
-                "Unable to find android system package", e);
-    }
-
-    // Start watching app ops after we and the package manager are up and running.
-    mAppOpsService.startWatchingMode(AppOpsManager.OP_RUN_IN_BACKGROUND, null,
-            new IAppOpsCallback.Stub() {
-                @Override public void opChanged(int op, int uid, String packageName) {
-                    if (op == AppOpsManager.OP_RUN_IN_BACKGROUND && packageName != null) {
-                        if (mAppOpsService.checkOperation(op, uid, packageName)
-                                != AppOpsManager.MODE_ALLOWED) {
-                            runInBackgroundDisabled(uid);
-                        }
-                    }
-                }
-            });
-}
-```
-
-- 注册服务。首先将ActivityManagerService注册到ServiceManager中，其次将几个与系统性能调试相关的服务注册到ServiceManager。这里还涉及到两个重要操作：
-
-- 查询并处理ApplicationInfo。首先调用PackageManagerService的接口，查询包名为android的应用程序的ApplicationInfo信息，对应于**framework-res.apk**。然后以该信息为参数调用`ActivityThread上的installSystemApplicationInfo()`方法。
-
-- 创建并处理ProcessRecord。调用ActivityManagerService上的newProcessRecordLocked，创建一个ProcessRecord类型的对象，并保存该对象的信息
-
-经过上面这些步骤，ActivityManagerService的启动流程就走完了，且在`createSystemContext()`方法中完成了ActivityThread的创建，并通过`attach()`方法将两者绑定。
-
-#### AMS的初始化工作
-
 我们一开始就说了，AMS是一个特别重要的系统服务，主要负责四大组件的管理和调度工作，所以再来看看AMS的初始化做了哪些工作：
 ```java
 public ActivityManagerService(Context systemContext) {
@@ -332,8 +266,10 @@ public ActivityManagerService(Context systemContext) {
     mInjector = new Injector();
     mContext = systemContext;//赋值mContext
     mFactoryTest = FactoryTest.getMode();
-    mSystemThread = ActivityThread.currentActivityThread();//获取当前的ActivityThread
-    mUiContext = mSystemThread.getSystemUiContext();//赋值mUiContext
+    //获取当前的ActivityThread
+    mSystemThread = ActivityThread.currentActivityThread();
+    //赋值mUiContext
+    mUiContext = mSystemThread.getSystemUiContext();
     Slog.i(TAG, "Memory class: " + ActivityManager.staticGetMemoryClass());
     mPermissionReviewRequired = mContext.getResources().getBoolean(
     com.android.internal.R.bool.config_permissionReviewRequired);
@@ -470,4 +406,280 @@ public ActivityManagerService(Context systemContext) {
 }
 
 ```
-#### AMS的相关重要类
+
+最后，当开启完一系列服务后，会调用`setSystemProcess()`方法
+```java
+public void setSystemProcess() {
+    try {
+        ServiceManager.addService(Context.ACTIVITY_SERVICE, this, /* allowIsolated= */ true,
+                DUMP_FLAG_PRIORITY_CRITICAL | DUMP_FLAG_PRIORITY_NORMAL | DUMP_FLAG_PROTO);
+        ServiceManager.addService(ProcessStats.SERVICE_NAME, mProcessStats);
+        ServiceManager.addService("meminfo", new MemBinder(this), /* allowIsolated= */ false,
+                DUMP_FLAG_PRIORITY_HIGH);
+        ServiceManager.addService("gfxinfo", new GraphicsBinder(this));
+        ServiceManager.addService("dbinfo", new DbBinder(this));
+        if (MONITOR_CPU_USAGE) {
+            ServiceManager.addService("cpuinfo", new CpuBinder(this),
+                    /* allowIsolated= */ false, DUMP_FLAG_PRIORITY_CRITICAL);
+        }
+        ServiceManager.addService("permission", new PermissionController(this));
+        ServiceManager.addService("processinfo", new ProcessInfoService(this));
+
+        ApplicationInfo info = mContext.getPackageManager().getApplicationInfo(
+                "android", STOCK_PM_FLAGS | MATCH_SYSTEM_ONLY);
+        mSystemThread.installSystemApplicationInfo(info, getClass().getClassLoader());
+
+        synchronized (this) {
+            ProcessRecord app = mProcessList.newProcessRecordLocked(info, info.processName,
+                    false,
+                    0,
+                    new HostingRecord("system"));
+            app.setPersistent(true);
+            app.pid = MY_PID;
+            app.getWindowProcessController().setPid(MY_PID);
+            app.maxAdj = ProcessList.SYSTEM_ADJ;
+            app.makeActive(mSystemThread.getApplicationThread(), mProcessStats);
+            mPidsSelfLocked.put(app);
+            mProcessList.updateLruProcessLocked(app, false, null);
+            updateOomAdjLocked(OomAdjuster.OOM_ADJ_REASON_NONE);
+        }
+    } catch (PackageManager.NameNotFoundException e) {
+        throw new RuntimeException(
+                "Unable to find android system package", e);
+    }
+
+    // Start watching app ops after we and the package manager are up and running.
+    mAppOpsService.startWatchingMode(AppOpsManager.OP_RUN_IN_BACKGROUND, null,
+            new IAppOpsCallback.Stub() {
+                @Override public void opChanged(int op, int uid, String packageName) {
+                    if (op == AppOpsManager.OP_RUN_IN_BACKGROUND && packageName != null) {
+                        if (mAppOpsService.checkOperation(op, uid, packageName)
+                                != AppOpsManager.MODE_ALLOWED) {
+                            runInBackgroundDisabled(uid);
+                        }
+                    }
+                }
+            });
+}
+```
+
+- 注册服务。首先将ActivityManagerService注册到ServiceManager中，其次将几个与系统性能调试相关的服务注册到ServiceManager。这里还涉及到两个重要操作：
+
+- 查询并处理ApplicationInfo。首先调用PackageManagerService的接口，查询包名为android的应用程序的ApplicationInfo信息，对应于**framework-res.apk**。然后以该信息为参数调用`ActivityThread上的installSystemApplicationInfo()`方法。
+
+- 创建并处理ProcessRecord。调用ActivityManagerService上的newProcessRecordLocked，创建一个ProcessRecord类型的对象，并保存该对象的信息
+
+经过上面这些步骤，ActivityManagerService的启动流程就走完了，且在`createSystemContext()`方法中完成了ActivityThread的创建，并通过`attach()`方法将两者绑定。
+
+
+## Activity的启动流程
+
+在前述中，我们说到，AMS是一个特别重要的系统服务，主要负责四大组件的管理和调度工作,那么Activity作为我们最为常用的组件，它是怎么启动的呢？。首先，先来了解一下AMS中与Activity管理相关的数据结构。
+
+#### 与Activity管理相关的数据结构
+
+##### ActivityRecord
+ActivityRecord，源码中的注释介绍：An entry in the history stack, representing an activity. 意思就是历史栈中的一个条目，代表一个activity。
+```java
+final class ActivityRecord extends ConfigurationContainer implements AppWindowContainerListener {
+    final ActivityManagerService service; // owner
+    final IApplicationToken.Stub appToken; // window manager token
+    AppWindowContainerController mWindowContainerController;
+    final ActivityInfo info; // all about me
+    final ApplicationInfo appInfo; // information about activity's app
+    //省略其他成员变量
+
+    //ActivityRecord所在的TaskRecord
+    private TaskRecord task;
+
+    //构造方法，需要传递大量信息
+    ActivityRecord(ActivityManagerService _service, ProcessRecord _caller, int _launchedFromPid,
+            int _launchedFromUid, String _launchedFromPackage, Intent _intent, String _resolvedType,
+            ActivityInfo aInfo, Configuration _configuration,
+            ActivityRecord _resultTo, String _resultWho, int _reqCode,
+            boolean _componentSpecified, boolean _rootVoiceInteraction,
+            ActivityStackSupervisor supervisor,
+            ActivityContainer container, ActivityOptions options, ActivityRecord sourceRecord) {
+            // ...省略
+
+    }
+```
+ActivityRecord中存在着大量的成员变量，包含了一个Activity的所有信息。 ActivityRecord中的成员变量task表示其所在的TaskRecord，由此可以看出：ActivityRecord与TaskRecord建立了联系
+
+```java
+private int startActivity(IApplicationThread caller, Intent intent, Intent ephemeralIntent,
+  String resolvedType, ActivityInfo aInfo, ResolveInfo rInfo,
+  IVoiceInteractionSession voiceSession, IVoiceInteractor voiceInteractor,
+    IBinder resultTo, String resultWho, int requestCode, int callingPid,
+    int callingUid, String callingPackage, int realCallingPid, int realCallingUid,
+    int startFlags, SafeActivityOptions options, boolean ignoreTargetSecurity, boolean componentSpecified,
+    ActivityRecord[] outActivity, TaskRecord inTask, boolean allowPendingRemoteAnimationRegistryLookup) {
+        ActivityRecord r = new ActivityRecord(mService, callerApp, callingPid,
+        callingUid,
+        callingPackage, intent, resolvedType, aInfo,
+        mService.getGlobalConfiguration(),
+        resultRecord, resultWho, requestCode, componentSpecified,
+        voiceSession != null,
+        mSupervisor, checkedOptions, sourceRecord);
+}
+```
+##### TaskRecord
+> \frameworks\base\services\core\java\com\android\server\am\TaskRecord.java
+
+TaskRecord，内部维护一个ArrayList<ActivityRecord> 用来保存ActivityRecord。
+
+
+```java
+class TaskRecord extends ConfigurationContainer implements TaskWindowContainerListener {
+    final int taskId; //任务ID
+    final ArrayList<ActivityRecord> mActivities; //使用一个ArrayList来保存所有的
+    ActivityRecord
+    private ActivityStack mStack; //TaskRecord所在的ActivityStack
+
+    TaskRecord(ActivityManagerService service, int _taskId, Intent _intent,
+        Intent _affinityIntent, String _affinity, String _rootAffinity,
+        ComponentName _realActivity, ComponentName _origActivity, boolean
+        _rootWasReset,
+        boolean _autoRemoveRecents, boolean _askedCompatMode, int _userId,
+        int _effectiveUid, String _lastDescription,
+        ArrayList<ActivityRecord> activities,
+        long lastTimeMoved, boolean neverRelinquishIdentity,
+        TaskDescription _lastTaskDescription, int taskAffiliation, int
+        prevTaskId,
+        int nextTaskId, int taskAffiliationColor, int callingUid, String
+        callingPackage,
+        int resizeMode, boolean supportsPictureInPicture, boolean
+        _realActivitySuspended,
+        boolean userSetupComplete, int minWidth, int minHeight) {
+
+    }
+
+    //添加Activity到顶部
+    void addActivityToTop(com.android.server.am.ActivityRecord r) {
+        addActivityAtIndex(mActivities.size(), r);
+    }
+
+    //添加Activity到指定的索引位置
+    void addActivityAtIndex(int index, ActivityRecord r) {
+    //...
+        r.setTask(this);//为ActivityRecord设置TaskRecord，就是这里建立的联系
+        //...
+        index = Math.min(size, index);
+        mActivities.add(index, r);//添加到mActivities
+        //...
+    }
+}
+```
+可以看到TaskRecord中使用了一个ArrayList来保存所有的ActivityRecord。 同样，TaskRecord中的mStack表示其所在的ActivityStack。 startActivity()时也会创建一个TaskRecord。
+##### ActivityStarter
+>    \frameworks\base\services\core\java\com\android\server\am\ActivityStarter.java
+```java
+class ActivityStarter {
+    private int setTaskFromReuseOrCreateNewTask(TaskRecord taskToAffiliate,
+        int preferredLaunchStackId, ActivityStack topStack) {
+        mTargetStack = computeStackFocus(mStartActivity, true,
+        mLaunchBounds, mLaunchFlags, mOptions);
+        if (mReuseTask == null) {
+              //创建一个createTaskRecord，实际上是调用ActivityStack里面的
+            createTaskRecord（）方法，ActivityStack下面会讲到
+            final TaskRecord task = mTargetStack.createTaskRecord(
+            mSupervisor.getNextTaskIdForUserLocked(mStartActivity.userId),
+            mNewTaskInfo != null ? mNewTaskInfo :
+            mStartActivity.info,
+            mNewTaskIntent != null ? mNewTaskIntent : mIntent,
+            mVoiceSession,
+            mVoiceInteractor, !mLaunchTaskBehind /* toTop */,
+            mStartActivity.mActivityType);
+            //其他代码略
+        }
+    }
+}
+```
+##### ActivityStack
+
+ActivityStack,内部维护了一个ArrayList<TaskRecord> ，用来管理TaskRecord
+```java
+class ActivityStack<T extends StackWindowController> extends ConfigurationContainer
+implements StackWindowListener {
+/**
+* The back history of all previous (and possibly still
+* running) activities. It contains #TaskRecord objects.
+*/
+private final ArrayList<TaskRecord> mTaskHistory = new ArrayList<>();//使用一
+个ArrayList来保存TaskRecord
+    protected final ActivityStackSupervisor mStackSupervisor;//持有一个
+    ActivityStackSupervisor，所有的运行中的ActivityStacks都通过它来进行管
+    ActivityStack(ActivityDisplay display, int stackId, ActivityStackSupervisor
+    supervisor,
+    int windowingMode, int activityType, boolean onTop) {
+    }
+    TaskRecord createTaskRecord(int taskId, ActivityInfo info, Intent intent,
+        IVoiceInteractionSession voiceSession,
+        IVoiceInteractor voiceInteractor,
+        boolean toTop, int type) {
+    //创建一个task
+        TaskRecord task = new TaskRecord(mService, taskId, info, intent,
+        voiceSession, voiceInteractor, type);
+        //将task添加到ActivityStack中去
+        addTask(task, toTop, "createTaskRecord");
+        //其他代码略
+        return task;
+    }
+    //添加Task
+    void addTask(final TaskRecord task, final boolean toTop, String reason)
+    {
+        addTask(task, toTop ? MAX_VALUE : 0, true /*
+        schedulePictureInPictureModeChange */, reason);
+        //其他代码略
+    }
+    //添加Task到指定位置
+    void addTask(final TaskRecord task, int position, boolean
+        schedulePictureInPictureModeChange,
+        String reason) {
+        mTaskHistory.remove(task);//若存在，先移除
+        //...
+        mTaskHistory.add(position, task);//添加task到mTaskHistory
+        task.setStack(this);//为TaskRecord设置ActivityStack
+        //...
+    }
+}
+```
+可以看到ActivityStack使用了一个ArrayList来保存TaskRecord。 另外，ActivityStack中还持有ActivityStackSupervisor对象，这个是用来管理ActivityStacks的。 ActivityStack是由ActivityStackSupervisor来创建的，实际ActivityStackSupervisor就是用来管理ActivityStack的
+##### ActivityStackSupervisor
+>frameworks/base/services/core/java/com/android/server/am/ActivityStackSupervisor.java
+
+ActivityStackSupervisor，顾名思义，就是用来管理ActivityStack的
+```java
+public class ActivityStackSupervisor extends ConfigurationContainer implements
+    DisplayListener {
+    ActivityStack mHomeStack;//管理的是Launcher相关的任务
+    ActivityStack mFocusedStack;//管理非Launcher相关的任务
+    //创建ActivityStack
+    ActivityStack createStack(int stackId,
+    ActivityStackSupervisor.ActivityDisplay display, boolean onTop) {
+        switch (stackId) {
+            case PINNED_STACK_ID:
+            //PinnedActivityStack是ActivityStack的子类
+            return new PinnedActivityStack(display, stackId, this,
+            mRecentTasks, onTop);
+            default:
+            //创建一个ActivityStack
+            return new ActivityStack(display, stackId, this,
+            mRecentTasks, onTop);
+        }
+    }
+}
+```
+ActivityStackSupervisor内部有两个不同的ActivityStack对象：mHomeStack、mFocusedStack，用来管理不同的任务。 ActivityStackSupervisor内部包含了创建ActivityStack对象的方法。 AMS初始化时会创建一个ActivityStackSupervisor对象
+
+![](../../../../res/ActivityStackSupervisor.jpg)
+
+#### Activity的启动流程
+![](../../../../res/activity启动.jpg)
+
+##### Launcher请求AMS阶段
+![](../../../../res/Launcher请求AMS阶段.bmp)
+##### AMS到ApplicationThread阶段
+![](../../../../res/AMS到ApplicationThread阶段.bmp)
+##### ApplicationThread到Activity阶段
+![](../../../../res/ApplicationThread到Activity阶段.bmp)
