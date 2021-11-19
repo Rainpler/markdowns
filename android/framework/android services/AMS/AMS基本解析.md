@@ -149,6 +149,9 @@ public final class SystemServer {
           startBootstrapServices();
           //启动核心进程 DropBoxManagerService  BatteryService  UsageStatsService  WebViewUpdateService
           startCoreServices();
+
+          // 安装系统核心provider、WindowManagerSerivce,Settings Observer
+          // startSystemUi  SystemReady
           startOtherServices();
           SystemServerInitThreadPool.shutdown();
       } catch (Throwable ex) {
@@ -352,6 +355,7 @@ public ActivityManagerService(Context systemContext) {
     mRecentTasks = createRecentTasks();
     mStackSupervisor.setRecentTasks(mRecentTasks);
     mLockTaskController = new LockTaskController(mContext, mStackSupervisor, mHandler);
+    // app activity生命周期相关
     mLifecycleManager = new ClientLifecycleManager();
     //启动一个线程专门跟进cpu当前状态信息，AMS对当前cpu状态了如指掌，可以更加高效的安排其他工作
     mProcessCpuThread = new Thread("CpuTracker") {
@@ -411,18 +415,26 @@ public ActivityManagerService(Context systemContext) {
 ```java
 public void setSystemProcess() {
     try {
+        //讲AMS注册到SM中
         ServiceManager.addService(Context.ACTIVITY_SERVICE, this, /* allowIsolated= */ true,
                 DUMP_FLAG_PRIORITY_CRITICAL | DUMP_FLAG_PRIORITY_NORMAL | DUMP_FLAG_PROTO);
+        // 进程统计
         ServiceManager.addService(ProcessStats.SERVICE_NAME, mProcessStats);
+        //内存
         ServiceManager.addService("meminfo", new MemBinder(this), /* allowIsolated= */ false,
                 DUMP_FLAG_PRIORITY_HIGH);
+        //图像信息
         ServiceManager.addService("gfxinfo", new GraphicsBinder(this));
+        //数据库
         ServiceManager.addService("dbinfo", new DbBinder(this));
+        //cpu
         if (MONITOR_CPU_USAGE) {
             ServiceManager.addService("cpuinfo", new CpuBinder(this),
                     /* allowIsolated= */ false, DUMP_FLAG_PRIORITY_CRITICAL);
         }
+        //权限
         ServiceManager.addService("permission", new PermissionController(this));
+        //进程服务
         ServiceManager.addService("processinfo", new ProcessInfoService(this));
 
         ApplicationInfo info = mContext.getPackageManager().getApplicationInfo(
@@ -441,6 +453,7 @@ public void setSystemProcess() {
             app.makeActive(mSystemThread.getApplicationThread(), mProcessStats);
             mPidsSelfLocked.put(app);
             mProcessList.updateLruProcessLocked(app, false, null);
+            // 手机杀进程有关
             updateOomAdjLocked(OomAdjuster.OOM_ADJ_REASON_NONE);
         }
     } catch (PackageManager.NameNotFoundException e) {
@@ -674,7 +687,7 @@ ActivityStackSupervisor内部有两个不同的ActivityStack对象：mHomeStack�
 
 ![](../../../../res/ActivityStackSupervisor.jpg)
 
-#### Activity的启动流程
+#### Activity的启动流程详解
 ![](../../../../res/activity启动.jpg)
 
 ##### Launcher请求AMS阶段
