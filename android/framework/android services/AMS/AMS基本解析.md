@@ -593,16 +593,15 @@ class ActivityStarter {
         mTargetStack = computeStackFocus(mStartActivity, true,
         mLaunchBounds, mLaunchFlags, mOptions);
         if (mReuseTask == null) {
-              //创建一个createTaskRecord，实际上是调用ActivityStack里面的
-            createTaskRecord（）方法，ActivityStack下面会讲到
+              //创建一个createTaskRecord，实际上是调用ActivityStack里面的createTaskRecord（）方法，ActivityStack下面会讲到
             final TaskRecord task = mTargetStack.createTaskRecord(
-            mSupervisor.getNextTaskIdForUserLocked(mStartActivity.userId),
-            mNewTaskInfo != null ? mNewTaskInfo :
-            mStartActivity.info,
-            mNewTaskIntent != null ? mNewTaskIntent : mIntent,
-            mVoiceSession,
-            mVoiceInteractor, !mLaunchTaskBehind /* toTop */,
-            mStartActivity.mActivityType);
+              mSupervisor.getNextTaskIdForUserLocked(mStartActivity.userId),
+              mNewTaskInfo != null ? mNewTaskInfo :
+              mStartActivity.info,
+              mNewTaskIntent != null ? mNewTaskIntent : mIntent,
+              mVoiceSession,
+              mVoiceInteractor, !mLaunchTaskBehind /* toTop */,
+              mStartActivity.mActivityType);
             //其他代码略
         }
     }
@@ -613,24 +612,22 @@ class ActivityStarter {
 ActivityStack,内部维护了一个ArrayList<TaskRecord> ，用来管理TaskRecord
 ```java
 class ActivityStack<T extends StackWindowController> extends ConfigurationContainer
-implements StackWindowListener {
+    implements StackWindowListener {
 /**
 * The back history of all previous (and possibly still
 * running) activities. It contains #TaskRecord objects.
 */
-private final ArrayList<TaskRecord> mTaskHistory = new ArrayList<>();//使用一
-个ArrayList来保存TaskRecord
-    protected final ActivityStackSupervisor mStackSupervisor;//持有一个
-    ActivityStackSupervisor，所有的运行中的ActivityStacks都通过它来进行管
-    ActivityStack(ActivityDisplay display, int stackId, ActivityStackSupervisor
-    supervisor,
-    int windowingMode, int activityType, boolean onTop) {
+    private final ArrayList<TaskRecord> mTaskHistory = new ArrayList<>();//使用一个ArrayList来保存TaskRecord
+    protected final ActivityStackSupervisor mStackSupervisor;//持有一个 ActivityStackSupervisor，所有的运行中的ActivityStacks都通过它来进行管理
+    ActivityStack(ActivityDisplay display, int stackId, ActivityStackSupervisor  supervisor,
+        int windowingMode, int activityType, boolean onTop) {
     }
+
     TaskRecord createTaskRecord(int taskId, ActivityInfo info, Intent intent,
         IVoiceInteractionSession voiceSession,
         IVoiceInteractor voiceInteractor,
         boolean toTop, int type) {
-    //创建一个task
+        //创建一个task
         TaskRecord task = new TaskRecord(mService, taskId, info, intent,
         voiceSession, voiceInteractor, type);
         //将task添加到ActivityStack中去
@@ -657,7 +654,7 @@ private final ArrayList<TaskRecord> mTaskHistory = new ArrayList<>();//使用一
     }
 }
 ```
-可以看到ActivityStack使用了一个ArrayList来保存TaskRecord。 另外，ActivityStack中还持有ActivityStackSupervisor对象，这个是用来管理ActivityStacks的。 ActivityStack是由ActivityStackSupervisor来创建的，实际ActivityStackSupervisor就是用来管理ActivityStack的
+可以看到ActivityStack使用了一个ArrayList来保存TaskRecord。 另外，ActivityStack中还持有ActivityStackSupervisor对象，这个是用来管理ActivityStacks的。 ActivityStack是由ActivityStackSupervisor来创建的，实际ActivityStackSupervisor就是用来管理ActivityStack的。
 ##### ActivityStackSupervisor
 >frameworks/base/services/core/java/com/android/server/am/ActivityStackSupervisor.java
 
@@ -673,22 +670,229 @@ public class ActivityStackSupervisor extends ConfigurationContainer implements
         switch (stackId) {
             case PINNED_STACK_ID:
             //PinnedActivityStack是ActivityStack的子类
-            return new PinnedActivityStack(display, stackId, this,
-            mRecentTasks, onTop);
+              return new PinnedActivityStack(display, stackId, this, mRecentTasks, onTop);
             default:
             //创建一个ActivityStack
-            return new ActivityStack(display, stackId, this,
-            mRecentTasks, onTop);
+              return new ActivityStack(display, stackId, this, mRecentTasks, onTop);
         }
     }
 }
 ```
-ActivityStackSupervisor内部有两个不同的ActivityStack对象：mHomeStack、mFocusedStack，用来管理不同的任务。 ActivityStackSupervisor内部包含了创建ActivityStack对象的方法。 AMS初始化时会创建一个ActivityStackSupervisor对象
+ActivityStackSupervisor内部有两个不同的ActivityStack对象：mHomeStack、mFocusedStack，用来管理不同的任务。 ActivityStackSupervisor内部包含了创建ActivityStack对象的方法，在AMS初始化时会创建一个ActivityStackSupervisor对象
 
 ![](../../../../res/ActivityStackSupervisor.jpg)
 
 #### Activity的启动流程详解
+
+当Android启动完毕就进入了Launcher，实际上Launcher就是一个APP。那么从Launcher中点击一个图标打开一个新APP，实际上就是一个startActivity的过程，由于不同的APP独属于不同的进程，那么这个跨进程的调用是怎么完成的呢？
+
+在此之前，我们先来看了解一下Launcher是怎么启动的。
+
+##### Launcher的启动流程
+Launcher的启动实际上是发生在AMS的启动过程中。回顾AMS的启动流程，在`SystemServer.run()`方法中，AMS在`startBootStrapService()`中启动，然后在`startOtherService()`中，调用了`ActivityManagerService.systemReady()`方法，systemReady函数主要负责启动整个系统，包括一些准备工作：
+1. 发送并处理与PRE_BOOT_COMPLETED广播相关的事情
+2. 杀死哪些在AMS还未启动完毕就先启动的应用进程，这些进程是APK所在的java进程，而不是Native 进程
+3. 从Setting数据库中获取配置信息，主要是debug_app、wait_for_debugger、always_finish_activities、font_scale
+4. 调用systemReady设置的回调对象goingCallback的run函数，这个函数主要是启动systemUIService，启动watchdog等
+5. 启动那些声明了persistent的APK。
+6. 启动桌面，发送BOOT_COMPLETED广播
+
+```java
+public void systemReady(final Runnable goingCallback) {
+    synchronized(this) {
+        .....
+        startHomeActivityLocked(currentUserId, "systemReady");
+    ......
+}
+```
+然后在`systemReady()`方法中，又再调用了`startHomeActivityLocked()`去启动HomeActivity，这个就是Launcher的Activity。
+```java
+ boolean startHomeActivityLocked(int userId, String reason) {
+
+    Intent intent = getHomeIntent();
+    ActivityInfo aInfo = resolveActivityInfo(intent, STOCK_PM_FLAGS, userId);
+    if (aInfo != null) {
+        intent.setComponent(new ComponentName(aInfo.applicationInfo.packageName, aInfo.name));
+        // Don't do this if the home app is currently being
+        // instrumented.
+        aInfo = new ActivityInfo(aInfo);
+        aInfo.applicationInfo = getAppInfoForUser(aInfo.applicationInfo, userId);
+        ProcessRecord app = getProcessRecordLocked(aInfo.processName,
+                aInfo.applicationInfo.uid, true);
+        if (app == null || app.instr == null) {
+            intent.setFlags(intent.getFlags() | FLAG_ACTIVITY_NEW_TASK);
+            final int resolvedUserId = UserHandle.getUserId(aInfo.applicationInfo.uid);
+            // For ANR debugging to verify if the user activity is the one that actually
+            // launched.
+            final String myReason = reason + ":" + userId + ":" + resolvedUserId;
+            mActivityStartController.startHomeActivity(intent, aInfo, myReason);
+        }
+    } else {
+        Slog.wtf(TAG, "No home screen found for " + intent, new Throwable());
+    }
+
+    return true;
+}
+```
+我们来看一个这个intent是怎样的数据，来看`getHomeIntent()`方法。
+```java
+Intent getHomeIntent() {
+      Intent intent = new Intent(mTopAction, mTopData != null ? Uri.parse(mTopData) : null);
+      intent.setComponent(mTopComponent);
+      intent.addFlags(Intent.FLAG_DEBUG_TRIAGED_MISSING);
+      if (mFactoryTest != FactoryTest.FACTORY_TEST_LOW_LEVEL) {
+          intent.addCategory(Intent.CATEGORY_HOME);
+      }
+      return intent;
+  }
+```
+在这里mTopAction是Intent.ACTION_MAIN，重点关注`intent.addCategory(Intent.CATEGORY_HOME)`这条语句，给HomeActvity的 intent对象添加Category `Intent.CATEGORY_HOME`（android.intent.category.HOME），也就是说Launcher的Activity必须将Category声明为`android.intent.category.HOME`，即表明这个Actiivty是一个Home Activity。
+
+取得Intent返回`startHomeActivityLocked()`方法，通过方法`resolveActivityInfo()`遍历手机中所有安装包含Category Intent.CATEGORY_HOME=android.intent.category.HOME的Activity，然后把Activity的信息作为Component通过`intent.setComponent()`方法传输给intent对象。如果是Android原生的手机，此时aInfo.applicationInfo.packageName的值是：com.android.launcher3，aInfo.name的值是：com.android.launcher3.Launcher，即com.android.launcher3.Launcher（Android 7.0）是Home Activity。
+
+接下来通过`getProcessRecordLocked()`方法从ProcessRecord中查找是否存在相关进程未启动，由于是初次启动，因此该条件判断成立，继续调用`mActivityStartController.startHomeActivity()`方法。
+```java
+void startHomeActivity(Intent intent, ActivityInfo aInfo, String reason) {
+    mSupervisor.moveHomeStackTaskToTop(reason);
+
+    mLastHomeActivityStartResult = obtainStarter(intent, "startHomeActivity: " + reason)
+            .setOutActivity(tmpOutRecord)
+            .setCallingUid(0)
+            .setActivityInfo(aInfo)
+            .execute();
+    mLastHomeActivityStartRecord = tmpOutRecord[0];
+    if (mSupervisor.inResumeTopActivity) {
+        // If we are in resume section already, home activity will be initialized, but not
+        // resumed (to avoid recursive resume) and will stay that way until something pokes it
+        // again. We need to schedule another resume.
+        mSupervisor.scheduleResumeTopActivities();
+    }
+}
+```
+在该方法中，首先调用`mSupervisor.moveHomeStackTaskToTop(reason)`将HomeActivity所在的Task移动到栈顶。然后通过obtainStarter()拿到ActivityStarter，并setActivityInfo(aInfo)将info传入，最后调用execute()来startActivity。
+
+
+##### APP的启动流程
+现在再来看Launcher中启动APP的流程。无论我们调用的是哪个启动Activity的方式，最后都会调用到`Activity.startActivityForResult()`方法。
+```java
+public void startActivityForResult(@RequiresPermission Intent intent, int requestCode,
+        @Nullable Bundle options) {
+    //一般的Activity的mParent都是null，该变量只用于ActivityGroup中，已废弃
+    if (mParent == null) {
+        options = transferSpringboardActivityOptions(options);
+        Instrumentation.ActivityResult ar =
+            mInstrumentation.execStartActivity(
+                this, mMainThread.getApplicationThread(), mToken, this,
+                intent, requestCode, options);
+        if (ar != null) {
+            mMainThread.sendActivityResult(
+                mToken, mEmbeddedID, requestCode, ar.getResultCode(),
+                ar.getResultData());
+        }
+        if (requestCode >= 0) {
+            // 如果有结果，则可以根据此避免在收到之前使得Activity可见
+            mStartedActivity = true;
+        }
+
+        cancelInputsAndStartExitTransition(options);
+        // TODO Consider clearing/flushing other event sources and events for child windows.
+    } else {
+        if (options != null) {
+            mParent.startActivityFromChild(this, intent, requestCode, options);
+        } else {
+            // Note we want to go through this method for compatibility with
+            // existing applications that may have overridden it.
+            mParent.startActivityFromChild(this, intent, requestCode);
+        }
+    }
+}
+```
+由于mParent为null，则会走`mInstrumentation.execStartActivity()`该方法。mInstrumentation是Activity的成员变量，用于监视系统与应用的交互。
+```java
+public ActivityResult execStartActivity(
+            Context who, IBinder contextThread, IBinder token, Activity target,
+            Intent intent, int requestCode, Bundle options) {
+        IApplicationThread whoThread = (IApplicationThread) contextThread;
+
+        // mActivityMonitors 是ActivityMonitor的集合，可以监视Activity的状态。
+        if (mActivityMonitors != null) {
+            synchronized (mSync) {
+                final int N = mActivityMonitors.size();
+                for (int i=0; i<N; i++) {
+                    final ActivityMonitor am = mActivityMonitors.get(i);
+                    ActivityResult result = null;
+                    if (am.ignoreMatchingSpecificIntents()) {
+                        result = am.onStartActivity(intent);
+                    }
+                    if (result != null) {
+                        am.mHits++;
+                        return result;
+                    } else if (am.match(who, null, intent)) {
+                        am.mHits++;
+                        if (am.isBlocking()) {
+                            return requestCode >= 0 ? am.getResult() : null;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        try {
+            //真正的启动在这里
+            int result = ActivityManager.getService()
+                .startActivity(whoThread, who.getBasePackageName(), intent,
+                        intent.resolveTypeIfNeeded(who.getContentResolver()),
+                        token, target != null ? target.mEmbeddedID : null,
+                        requestCode, 0, null, options);
+            //checkStartActivityResult方法是抛异常专业户，它对上面开启activity的结果进行检查，如果无法打开activity，
+            //则抛出诸如ActivityNotFoundException类似的各种异常
+            checkStartActivityResult(result, intent);
+        } catch (RemoteException e) {
+            throw new RuntimeException("Failure from system", e);
+        }
+        return null;
+    }
+```
+在该方法中，通过`ActivityManager.getService()`拿到IActivityManager的实例，然后调用它的startActivity方法。
+```java
+public static IActivityManager getService() {
+        return IActivityManagerSingleton.get();
+    }
+
+private static final Singleton<IActivityManager> IActivityManagerSingleton =
+      new Singleton<IActivityManager>() {
+          @Override
+          protected IActivityManager create() {
+              // 通过SM拿到AMS的IBinder引用
+              final IBinder b = ServiceManager.getService(Context.ACTIVITY_SERVICE);
+              // 然后通过建立了AMS的本地代理
+              final IActivityManager am = IActivityManager.Stub.asInterface(b);
+              return am;
+          }
+      };
+```
+我们来看该实例具体是什么对象，在create()方法中，首先通过ServiceManager.getService(Context.ACTIVITY_SERVICE)获取到AMS的IBinder引用，然后通过AIDL的方式将它转变成IActivityManager对象的本地代理。
+
+>注意Android 8.0 之前并没有采用AIDL，而是采用了类似AIDL的形式，用AMS的代理对象ActivityManagerProxy来与AMS进行进程间通信，Android 8.0 去除了ActivityManagerNative的内部类ActivityManagerProxy，代替它的则是IActivityManager，它是AMS在本地的代理。
+
+通过该代理，就能跨进程远程调用AMS的startActivity方法了，最后同样会调用通过obtainStarter()拿到ActivityStarter，并将info传入，再调用execute()来startActivity。
+
+
+
 ![](../../../../res/activity启动.jpg)
+
+APP->AMS
+
+setSystemProcess中将AMS添加到SM中
+
+ActivityManager.getService("activity")拿到AMS
+
+AMS->APP
+
+IApplicationThread
+
+
+IActivityManager
 
 ##### Launcher请求AMS阶段
 ![](../../../../res/Launcher请求AMS阶段.bmp)
